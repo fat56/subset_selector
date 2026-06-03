@@ -1,0 +1,3 @@
+experiment_id,title,stage,status,created_at,primary_doc,config,latest_run,decision
+0001_stage1_register_quality_gate,Stage 1 register distance versus 3DGS quality gate,stage1,planned,2026-06-03,docs/experiments/0001_stage1_register_quality_gate/proposal.md,configs/experiments/0001_stage1_register_quality_gate.yaml,,pending
+

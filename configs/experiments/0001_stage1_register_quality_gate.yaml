@@ -1,0 +1,47 @@
+experiment:
+  id: 0001_stage1_register_quality_gate
+  title: Stage 1 register distance versus 3DGS quality gate
+  stage: stage1
+  status: planned
+
+question: Does register/readout cosine similarity correlate with sparse-view 3DGS quality strongly enough to justify selector training?
+
+datasets:
+  registry: data/datasets.yaml
+  split_policy: scene_level_no_cross_scene_leakage
+  scenes: TBD
+
+teacher:
+  integration: configs/integrations/vggt_omega.yaml
+  output_cache_root: caches/vggt_omega/0001_stage1_register_quality_gate
+  backbone: frozen_vggt_omega
+  readout_head: register_readout_head_v0
+  full_set_policy:
+    max_frames: 300
+    sampling: dense_uniform_if_needed
+
+selection_methods:
+  - random_k
+  - uniform_stride_k
+  - feature_k_center
+  - register_k_center
+
+budgets:
+  fixed_k: [5, 10, 20, 40]
+  ratios: [0.05, 0.10, 0.20]
+
+evaluation:
+  reconstruction_backend: TBD_3DGS_or_InstantSplat
+  metrics:
+    - register_cosine_similarity
+    - psnr
+    - ssim
+    - lpips
+    - pose_ate
+    - pose_rpe
+    - subset_ratio
+
+gate:
+  statistic: spearman_rho
+  pass_threshold: 0.5
+  required_direction: positive

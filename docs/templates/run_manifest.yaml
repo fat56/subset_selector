@@ -1,0 +1,27 @@
+run:
+  id: <run_id>
+  experiment_id: <experiment_id>
+  timestamp: <iso8601>
+  stage: <stage>
+  method: <method>
+  dataset: <dataset>
+  status: planned
+
+reproducibility:
+  git_commit: <commit>
+  git_dirty: <true_or_false>
+  config: <config_path>
+  config_sha256: <sha256>
+  command: <command>
+
+artifacts:
+  selected_indices: selected_indices.txt
+  metrics: metrics.json
+  notes: notes.md
+  large_artifacts: []
+
+decision:
+  primary_metric: null
+  primary_value: null
+  gate: null
+

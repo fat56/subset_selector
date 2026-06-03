@@ -1,0 +1,28 @@
+stage:
+  id: stage2
+  name: fixed_k_selector_training
+  intent: Train selector only after Stage 1 passes.
+
+preconditions:
+  - stage1_register_quality_correlation_gate_passed
+
+training:
+  backbone: frozen_vggt_omega
+  readout_head: trainable_register_readout
+  selector: trainable_set_selector
+  loss:
+    nce_weight: 1.0
+    positive_cosine_weight: 1.0
+    coverage_weight: 0.0
+  selection:
+    mode: fixed_k
+    differentiable_method: TBD
+
+gate:
+  must_beat:
+    - random_k
+    - uniform_stride_k
+    - feature_k_center
+    - register_k_center
+    - fisherrf_information_gain
+

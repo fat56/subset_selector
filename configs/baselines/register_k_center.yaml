@@ -1,0 +1,16 @@
+method:
+  id: register_k_center
+  family: baseline
+  description: K-center coverage over VGGT-OMEGA per-frame register summaries.
+
+features:
+  backend: vggt_omega_register_summary
+  normalize: true
+  distance: cosine
+
+selection:
+  budget_mode: fixed_k
+  initialization: farthest_from_mean
+
+scope_note: This baseline is for offline dataset compression and does not save VGGT inference cost.
+

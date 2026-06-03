@@ -1,0 +1,15 @@
+method:
+  id: uniform_stride_k
+  family: baseline
+  description: Deterministic temporal stride selection sorted by original frame order.
+
+selection:
+  budget_mode: fixed_k
+  preserve_order: true
+  anchor_policy: first_frame
+
+outputs:
+  - selected_indices
+  - metrics
+  - run_manifest
+

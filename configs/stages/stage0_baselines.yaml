@@ -1,0 +1,23 @@
+stage:
+  id: stage0
+  name: baseline_and_eval_pipeline
+  intent: Build selection baselines and sparse-view 3DGS evaluation before training.
+
+required_outputs:
+  - selected_indices
+  - register_readout_embeddings
+  - reconstruction_metrics
+  - runtime_metrics
+
+baselines:
+  - random_k
+  - uniform_stride_k
+  - feature_k_center
+  - register_k_center
+  - facility_location_greedy
+  - pose_farthest_point
+  - quality_filter_plus_coverage
+  - overlap_graph_selection
+  - fisherrf_information_gain
+  - instantsplat_covisibility
+

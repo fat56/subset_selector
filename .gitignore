@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Large local data and generated artifacts
+data/raw/
+data/interim/
+data/processed/
+data/external/
+output/
+outputs/
+artifacts/
+checkpoints/
+caches/
+wandb/
+mlruns/
+
+# Heavy model artifacts
+*.ckpt
+*.pth
+*.pt
+*.safetensors
+*.onnx
+
+# Media/render dumps
+*.ply
+*.mp4
+*.mov
+*.avi
+
+# Keep runs as lightweight records. Put heavy files under ignored subdirs.
+runs/**/artifacts/
+runs/**/cache/
+runs/**/checkpoints/
+runs/**/logs/
+runs/**/renders/
+

@@ -1,0 +1,38 @@
+project:
+  name: vggt_omega_selector
+  objective: budgeted_geometric_coverage_selection
+  primary_gate: stage1_register_quality_correlation
+
+paths:
+  data_root: data
+  runs_root: runs
+  docs_root: docs
+  cache_root: caches
+  external_root: data/external
+  vggt_omega_root: external/vggt-omega
+  vggt_omega_python: external/vggt-omega/.venv/bin/python
+
+tracking:
+  experiment_registry: docs/registry/experiment_registry.csv
+  run_ledger: docs/registry/run_ledger.csv
+  metrics_schema: docs/registry/metrics_schema.md
+  artifact_policy: manifest_records_paths_checksums_large_files_not_committed
+
+metrics:
+  embedding:
+    - register_cosine_similarity
+    - positive_cosine_loss
+    - retrieval_top1_accuracy
+  reconstruction:
+    - psnr
+    - ssim
+    - lpips
+  geometry:
+    - pose_ate
+    - pose_rpe
+    - depth_abs_rel
+  efficiency:
+    - subset_size
+    - subset_ratio
+    - vggt_seconds
+    - gs_train_seconds

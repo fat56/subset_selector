@@ -1,0 +1,28 @@
+stage:
+  id: stage1
+  name: register_quality_correlation_gate
+  intent: Decide whether register/readout distance is a useful proxy for 3DGS quality.
+
+gate:
+  primary_statistic: spearman_rho
+  x_metric: register_cosine_similarity
+  y_metric: psnr
+  pass_threshold: 0.5
+  required_direction: positive
+  stability_checks:
+    - multiple_k_values
+    - multiple_selection_methods
+    - scene_level_split
+  fail_action: add_geometry_auxiliary_or_redefine_proxy_before_selector_training
+
+budgets:
+  fixed_k:
+    - 5
+    - 10
+    - 20
+    - 40
+  ratios:
+    - 0.05
+    - 0.10
+    - 0.20
+

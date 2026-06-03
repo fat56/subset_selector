@@ -1,0 +1,11 @@
+datasets:
+  - id: placeholder_dataset
+    status: TODO
+    root: data/raw/placeholder_dataset
+    scenes: []
+    notes: Replace with real scene registry before running experiments.
+
+split_policy:
+  unit: scene
+  no_cross_scene_leakage: true
+

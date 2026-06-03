@@ -1,0 +1,19 @@
+method:
+  id: feature_k_center
+  family: baseline
+  description: K-center coverage over cheap image features such as DINO or CLIP.
+
+features:
+  backend: TBD
+  normalize: true
+  distance: cosine
+
+selection:
+  budget_mode: fixed_k
+  initialization: farthest_from_mean
+
+outputs:
+  - selected_indices
+  - feature_cache_manifest
+  - metrics
+

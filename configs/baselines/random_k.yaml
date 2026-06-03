@@ -1,0 +1,14 @@
+method:
+  id: random_k
+  family: baseline
+  description: Uniform random K-frame subset, repeated with multiple seeds.
+
+selection:
+  budget_mode: fixed_k
+  seeds: [0, 1, 2, 3, 4]
+
+outputs:
+  - selected_indices
+  - metrics
+  - run_manifest
+
