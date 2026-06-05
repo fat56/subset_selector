@@ -15,7 +15,7 @@ Pending design review.
 
 ## Current Recommendation
 
-Adopt the soft-token proxy plus hard-subset validation plan for the first implementation. Do not start with RL. Do not jointly train an unconstrained readout and selector until the frozen-readout baseline is measured.
+Adopt the soft-token proxy plus hard-subset validation plan for the first implementation. Start with `L_pos` and optionally `L_nce`; keep coverage, redundancy, quality, depth, and pose auxiliary losses disabled until diagnostics show a specific failure mode. Do not start with RL. Do not jointly train an unconstrained readout and selector until the frozen-readout baseline is measured.
 
 ## Next Actions
 

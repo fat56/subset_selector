@@ -202,7 +202,21 @@ L_rank = max(0, margin - score(S_good) + score(S_bad))
 
 ## Loss Design
 
-推荐第一版总损失：
+本节是 loss menu，不是第一版全部启用的 recipe。Stage 2 的第一版目标应该尽量小，先验证 selector 能不能用最直接的 embedding distillation 学到有效选择策略。
+
+推荐 MVP 从下面开始：
+
+```text
+L = L_pos
+```
+
+如果 batch size 足够且 scene 多样性较好，再打开 symmetric InfoNCE：
+
+```text
+L = w_pos * L_pos + w_nce * L_nce
+```
+
+只有当观察到具体失败模式时，再逐项加入辅助 loss：
 
 ```text
 L = w_nce * L_nce
@@ -213,17 +227,24 @@ L = w_nce * L_nce
   + w_quality * L_quality
 ```
 
-默认建议：
+MVP 默认建议：
 
 ```text
-w_nce = 1.0
-w_pos = 0.5 to 1.0
-w_card = 1.0 if relaxed mask does not exactly sum to K, else 0
-w_cov = 0.05 to 0.2
-w_red = 0 to 0.05
-w_quality = 0 to 0.05
+w_pos = 1.0
+w_nce = 0 or 1.0
 tau_nce = 0.07
 ```
+
+辅助项默认关闭：
+
+```text
+w_card = 1.0 if relaxed mask does not exactly sum to K, else 0
+w_cov = 0 unless selected frames collapse to near-duplicates
+w_red = 0 unless selected frames cluster too much
+w_quality = 0 unless blur/quality failures dominate
+```
+
+设计原则：VGGT/VGGT-OMEGA 的训练 loss 用来学习几何 foundation model；这里的 selector loss 用来学习“选哪些图”。因此 coverage、redundancy、quality 这些项不是为了复刻 VGGT 训练，而是给 subset selection 的常见失败模式准备的补救约束。
 
 ### Symmetric InfoNCE
 
@@ -287,7 +308,9 @@ L_quality = - sum_i m_i * q_i / K
 
 ### Geometry Auxiliary Loss
 
-第一版不建议启用 depth/pose/point-map loss。只有当 Stage 2 的 embedding 指标改善但 FastGS 指标不跟随改善时，再加入：
+第一版不建议启用 depth/pose/point-map loss。原因是本阶段优先验证最核心假设：`z_subset` 接近 `z_full` 是否足以带来更好的重建子集。过早加入 depth loss 会把问题变成“用 VGGT depth pseudo-label 训练 selector”，同时引入 scale alignment、valid mask、动态区域、full/subset 上下文差异等额外复杂性。
+
+只有当 Stage 2 的 embedding 指标改善但 FastGS 指标不跟随改善时，再加入几何辅助：
 
 - depth log-scale distillation on selected frames。
 - relative pose or pairwise camera distance consistency。

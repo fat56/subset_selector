@@ -32,7 +32,8 @@
    - input: cached per-image features。
    - model: FeatureProjector + 4-layer SetSelector + ScoreHead。
    - selection: relaxed top-K mask。
-   - objective: `L_nce + beta * L_pos + coverage/cardinality auxiliary`。
+   - MVP objective: `L_pos`, plus optional `L_nce` when batch scenes are diverse enough。
+   - auxiliary losses such as coverage, redundancy, quality, depth, or pose stay off until a concrete failure mode appears。
 
 4. Run hard-subset validation.
 
