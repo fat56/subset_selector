@@ -40,9 +40,5 @@ mlruns/
 *.mov
 *.avi
 
-# Keep runs as lightweight records. Put heavy files under ignored subdirs.
-runs/**/artifacts/
-runs/**/cache/
-runs/**/checkpoints/
-runs/**/logs/
-runs/**/renders/
+# Generated experiment runs
+runs/

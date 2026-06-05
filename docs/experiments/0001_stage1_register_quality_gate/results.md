@@ -26,8 +26,12 @@
 | prepared/3dgsdata/mipnerf360_bonsai/uniform_stride_ratio/ratio_020/fastgs_output_res800_30k_fix1 | uniform_stride_ratio_diag | 3dgsdata/mipnerf360_bonsai | 0.20 | pending | 29.4434 | 0.9306 | 0.1191 | 诊断 run：同上，实际评估 11 张 test view；不作为质量门正式口径。 |
 | prepared/3dgsdata/mipnerf360_bonsai/random_ratio_seed000/ratio_020/fastgs_output_res800_30k_fix1_stage1split | random_ratio_seed000 | 3dgsdata/mipnerf360_bonsai | 0.20 | pending | 28.1985 | 0.9171 | 0.1313 | 正式 Stage 1 split run：FastGS 使用 `stage1_split.json`，51 train / 37 held-out test views，训练耗时 70.58s。`metrics.json` 已写入该 run。 |
 | prepared/3dgsdata/mipnerf360_bonsai/uniform_stride_ratio/ratio_020/fastgs_output_res800_30k_fix1_stage1split | uniform_stride_ratio | 3dgsdata/mipnerf360_bonsai | 0.20 | pending | 28.6207 | 0.9186 | 0.1229 | 正式 Stage 1 split run：FastGS 使用 `stage1_split.json`，51 train / 37 held-out test views，训练耗时 71.95s。`metrics.json` 已写入该 run。 |
-| prepared/3dgsdata/*/random_ratio_seed000-004/ratio_020/fastgs_output_images4_30k | random_ratio_seed000-004 | 3dgsdata | 0.20 | pending | 22.1954 | 0.6836 | 0.2691 | 65 条正式 Stage 1 split run 均完成；表中为所有 random seed pooled mean。使用 `images_4`、30k iterations、densification interval 100。 |
-| prepared/3dgsdata/*/uniform_stride_ratio/ratio_020/fastgs_output_images4_30k | uniform_stride_ratio | 3dgsdata | 0.20 | pending | 22.7165 | 0.6978 | 0.2583 | 13 条正式 Stage 1 split run 均完成；表中为 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
+| prepared/3dgsdata/*/random_ratio_seed000/ratio_020/fastgs_output_images4_30k | random_ratio_seed000 | 3dgsdata | 0.20 | pending | 22.3184 | 0.6863 | 0.2673 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
+| prepared/3dgsdata/*/random_ratio_seed001/ratio_020/fastgs_output_images4_30k | random_ratio_seed001 | 3dgsdata | 0.20 | pending | 22.0161 | 0.6757 | 0.2732 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
+| prepared/3dgsdata/*/random_ratio_seed002/ratio_020/fastgs_output_images4_30k | random_ratio_seed002 | 3dgsdata | 0.20 | pending | 22.3021 | 0.6887 | 0.2661 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
+| prepared/3dgsdata/*/random_ratio_seed003/ratio_020/fastgs_output_images4_30k | random_ratio_seed003 | 3dgsdata | 0.20 | pending | 22.1264 | 0.6858 | 0.2688 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
+| prepared/3dgsdata/*/random_ratio_seed004/ratio_020/fastgs_output_images4_30k | random_ratio_seed004 | 3dgsdata | 0.20 | pending | 22.2143 | 0.6813 | 0.2699 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
+| prepared/3dgsdata/*/uniform_stride_ratio/ratio_020/fastgs_output_images4_30k | uniform_stride_ratio | 3dgsdata | 0.20 | pending | 22.7165 | 0.6978 | 0.2583 | 13 条正式 Stage 1 split run 均完成；表中为 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
 
 ## Random/Uniform `images_4` 30k 矩阵
 
@@ -39,33 +43,54 @@
 - FastGS 参数为 `--eval --images images_4 --iterations 30000 --densification_interval 100`，模型配置记录的 `resolution=-1`。
 - 测试集先从 full image set 按 full-scene llffhold 切出；train set 再从非 test pool 中选取。`scripts/run_fastgs_random_uniform_queue.sh prepare` 会校验每个 run 有 `stage1_split.json`、`test_images` 等于 full-scene llffhold split、`train_images` 等于 selected subset，且 train/test 不相交。
 
-汇总指标：
+汇总指标不合并不同 random seed；每个 `random_ratio_seedXXX` 独立计算平均。`all` 是 13 个 scene 的平均，`mipnerf360` / `tandt` / `db` 是按数据集组分别平均。
 
-| 方法 | Runs | PSNR mean | SSIM mean | LPIPS mean | 备注 |
-|---|---:|---:|---:|---:|---|
-| random_ratio_seed000-004 | 65 | 22.1954 | 0.6836 | 0.2691 | 13 scene x 5 seeds pooled mean。 |
-| uniform_stride_ratio | 13 | 22.7165 | 0.6978 | 0.2583 | 13 scene mean。 |
-| uniform - random seed mean | 13 scene pairs | +0.5211 | +0.0143 | -0.0108 | 对每个 scene 先求 random 5 seed mean，再与 uniform 比较；LPIPS 越低越好。 |
+| Dataset | Method | Runs | PSNR mean | SSIM mean | LPIPS mean |
+|---|---|---:|---:|---:|---:|
+| all | random_seed000 | 13 | 22.3184 | 0.6863 | 0.2673 |
+| all | random_seed001 | 13 | 22.0161 | 0.6757 | 0.2732 |
+| all | random_seed002 | 13 | 22.3021 | 0.6887 | 0.2661 |
+| all | random_seed003 | 13 | 22.1264 | 0.6858 | 0.2688 |
+| all | random_seed004 | 13 | 22.2143 | 0.6813 | 0.2699 |
+| all | uniform | 13 | 22.7165 | 0.6978 | 0.2583 |
+| mipnerf360 | random_seed000 | 9 | 22.7658 | 0.6578 | 0.2872 |
+| mipnerf360 | random_seed001 | 9 | 22.4022 | 0.6414 | 0.2963 |
+| mipnerf360 | random_seed002 | 9 | 22.6333 | 0.6583 | 0.2869 |
+| mipnerf360 | random_seed003 | 9 | 22.3079 | 0.6515 | 0.2934 |
+| mipnerf360 | random_seed004 | 9 | 22.4582 | 0.6470 | 0.2932 |
+| mipnerf360 | uniform | 9 | 23.0551 | 0.6639 | 0.2821 |
+| tandt | random_seed000 | 2 | 20.4199 | 0.7757 | 0.1662 |
+| tandt | random_seed001 | 2 | 19.9478 | 0.7589 | 0.1788 |
+| tandt | random_seed002 | 2 | 20.4396 | 0.7712 | 0.1705 |
+| tandt | random_seed003 | 2 | 20.3936 | 0.7723 | 0.1692 |
+| tandt | random_seed004 | 2 | 20.7055 | 0.7775 | 0.1639 |
+| tandt | uniform | 2 | 20.6647 | 0.7947 | 0.1511 |
+| db | random_seed000 | 2 | 22.2037 | 0.7250 | 0.2787 |
+| db | random_seed001 | 2 | 22.3469 | 0.7471 | 0.2636 |
+| db | random_seed002 | 2 | 22.6742 | 0.7426 | 0.2681 |
+| db | random_seed003 | 2 | 23.0429 | 0.7533 | 0.2577 |
+| db | random_seed004 | 2 | 22.6253 | 0.7398 | 0.2711 |
+| db | uniform | 2 | 23.2447 | 0.7538 | 0.2586 |
 
-按 scene 对比：
+PSNR 上，`all`、`mipnerf360` 和 `db` 组最高的是 `uniform`；`tandt` 组最高的是 `random_seed004`。LPIPS 越低越好。
 
-| Scene | Train/Test | Random PSNR mean +/- sd | Random SSIM | Random LPIPS | Uniform PSNR | Uniform SSIM | Uniform LPIPS | Uniform-Random PSNR |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| db_drjohnson | 46/33 | 22.4274 +/- 0.5557 | 0.7048 | 0.2979 | 22.7489 | 0.7077 | 0.2936 | +0.3215 |
-| db_playroom | 40/29 | 22.7298 +/- 0.6766 | 0.7784 | 0.2378 | 23.7406 | 0.7999 | 0.2236 | +1.0108 |
-| mipnerf360_bicycle | 34/25 | 20.1522 +/- 0.7210 | 0.4808 | 0.3825 | 19.7752 | 0.4665 | 0.3889 | -0.3770 |
-| mipnerf360_bonsai | 51/37 | 27.5462 +/- 0.4052 | 0.9000 | 0.1515 | 28.9883 | 0.9167 | 0.1356 | +1.4421 |
-| mipnerf360_counter | 42/30 | 24.2247 +/- 0.6595 | 0.8143 | 0.1961 | 25.6509 | 0.8526 | 0.1710 | +1.4261 |
-| mipnerf360_flowers | 31/22 | 16.1373 +/- 0.3878 | 0.3597 | 0.4356 | 16.1695 | 0.3690 | 0.4309 | +0.0322 |
-| mipnerf360_garden | 33/24 | 23.1517 +/- 0.2060 | 0.7236 | 0.2449 | 23.8380 | 0.7421 | 0.2327 | +0.6863 |
-| mipnerf360_kitchen | 49/35 | 27.1707 +/- 0.4665 | 0.8964 | 0.1179 | 28.1889 | 0.9137 | 0.1036 | +1.0182 |
-| mipnerf360_room | 55/39 | 27.4050 +/- 0.5665 | 0.8873 | 0.1763 | 27.7214 | 0.8847 | 0.1728 | +0.3164 |
-| mipnerf360_stump | 22/16 | 19.4950 +/- 0.2111 | 0.4110 | 0.4481 | 19.7489 | 0.4388 | 0.4361 | +0.2539 |
-| mipnerf360_treehill | 25/18 | 17.3383 +/- 0.3027 | 0.3877 | 0.4697 | 17.4147 | 0.3907 | 0.4669 | +0.0764 |
-| tandt_train | 53/38 | 18.0376 +/- 0.3080 | 0.6919 | 0.2319 | 18.2481 | 0.7249 | 0.2058 | +0.2105 |
-| tandt_truck | 44/32 | 22.7249 +/- 0.2627 | 0.8504 | 0.1076 | 23.0813 | 0.8646 | 0.0964 | +0.3564 |
+按 scene 的 PSNR 分列如下，便于后续排查 seed 差异：
 
-Uniform 相对 random seed mean：PSNR 在 12/13 个 scene 更高，SSIM 在 11/13 个 scene 更高，LPIPS 在 12/13 个 scene 更低。唯一 PSNR 下降的 scene 是 `mipnerf360_bicycle`。
+| Scene | Dataset | Train/Test | random_seed000 | random_seed001 | random_seed002 | random_seed003 | random_seed004 | uniform |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| db_drjohnson | db | 46/33 | 22.2870 | 22.7602 | 21.9373 | 23.2168 | 21.9359 | 22.7489 |
+| db_playroom | db | 40/29 | 22.1204 | 21.9337 | 23.4112 | 22.8690 | 23.3146 | 23.7406 |
+| mipnerf360_bicycle | mipnerf360 | 34/25 | 20.5653 | 20.1063 | 20.2854 | 20.8410 | 18.9628 | 19.7752 |
+| mipnerf360_bonsai | mipnerf360 | 51/37 | 27.9375 | 27.7863 | 27.6719 | 26.8998 | 27.4355 | 28.9883 |
+| mipnerf360_counter | mipnerf360 | 42/30 | 24.6960 | 24.1527 | 24.5797 | 23.1054 | 24.5898 | 25.6509 |
+| mipnerf360_flowers | mipnerf360 | 31/22 | 16.3682 | 15.9761 | 16.5984 | 16.1625 | 15.5813 | 16.1695 |
+| mipnerf360_garden | mipnerf360 | 33/24 | 23.1380 | 22.8501 | 23.3772 | 23.0876 | 23.3056 | 23.8380 |
+| mipnerf360_kitchen | mipnerf360 | 49/35 | 27.2814 | 26.7169 | 27.6026 | 26.6458 | 27.6068 | 28.1889 |
+| mipnerf360_room | mipnerf360 | 55/39 | 28.1515 | 27.8349 | 26.9928 | 26.8234 | 27.2224 | 27.7214 |
+| mipnerf360_stump | mipnerf360 | 22/16 | 19.5110 | 19.2803 | 19.2804 | 19.7165 | 19.6868 | 19.7489 |
+| mipnerf360_treehill | mipnerf360 | 25/18 | 17.2431 | 16.9159 | 17.3109 | 17.4889 | 17.7328 | 17.4147 |
+| tandt_train | tandt | 53/38 | 18.1991 | 17.5700 | 17.9895 | 18.0281 | 18.4011 | 18.2481 |
+| tandt_truck | tandt | 44/32 | 22.6406 | 22.3255 | 22.8897 | 22.7590 | 23.0099 | 23.0813 |
 
 ## 相关性
 
