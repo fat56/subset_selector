@@ -26,6 +26,10 @@ selection_methods:
   - feature_k_center
   - register_k_center
 
+selection_repeats:
+  random_ratio:
+    seeds: [0, 1, 2, 3, 4]
+
 budgets:
   fixed_k: []
   ratios: [0.20]
@@ -36,7 +40,9 @@ evaluation:
   backend_config: configs/integrations/fastgs.yaml
   fastgs:
     eval_split: true
-    resolution: null
+    split_policy: llffhold
+    llffhold: 8
+    resolution: 800
     data_device: null
     extra_args: []
   metrics:

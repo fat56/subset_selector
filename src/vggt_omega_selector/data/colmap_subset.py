@@ -33,6 +33,9 @@ def materialize_colmap_subset(
     output_dir: Path,
     project_root: Path,
     overwrite: bool = False,
+    test_image_paths: list[Path] | None = None,
+    split_policy: str | None = None,
+    selected_source_indices: list[int] | None = None,
 ) -> MaterializedSubset:
     """Create a FastGS-compatible source directory for selected scene images."""
 
@@ -42,17 +45,23 @@ def materialize_colmap_subset(
         shutil.rmtree(output_dir)
 
     selected_paths = [image_paths[index] for index in selected_indices]
+    test_paths = test_image_paths or []
+    source_paths = unique_paths([*selected_paths, *test_paths])
     images_out = output_dir / scene.image_dir
     sparse_out = output_dir / scene.sparse_dir
     images_out.mkdir(parents=True, exist_ok=True)
 
     selected_rel_paths = []
-    for image_path in selected_paths:
+    test_rel_paths = []
+    for image_path in source_paths:
         rel_path = image_path.relative_to(scene.images_path)
-        selected_rel_paths.append(rel_path.as_posix())
         destination = images_out / rel_path
         destination.parent.mkdir(parents=True, exist_ok=True)
         os.symlink(image_path.resolve(), destination)
+    for image_path in selected_paths:
+        selected_rel_paths.append(image_path.relative_to(scene.images_path).as_posix())
+    for image_path in test_paths:
+        test_rel_paths.append(image_path.relative_to(scene.images_path).as_posix())
 
     (output_dir / "selected_images.json").write_text(
         json.dumps(
@@ -60,18 +69,34 @@ def materialize_colmap_subset(
                 "scene": scene.scene_id,
                 "image_dir": scene.image_dir,
                 "selected_indices": selected_indices,
+                "selected_source_indices": selected_source_indices or selected_indices,
                 "selected_images": selected_rel_paths,
+                "test_images": test_rel_paths,
+                "split_policy": split_policy,
             },
             indent=2,
         )
         + "\n",
         encoding="utf-8",
     )
+    if split_policy:
+        (output_dir / "stage1_split.json").write_text(
+            json.dumps(
+                {
+                    "policy": split_policy,
+                    "train_images": selected_rel_paths,
+                    "test_images": test_rel_paths,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     colmap_status = materialize_sparse_text_model(
         source_sparse=scene.sparse_path,
         destination_sparse=sparse_out,
-        selected_image_names=selected_rel_paths,
+        selected_image_names=[*selected_rel_paths, *test_rel_paths],
     )
     runnable = colmap_status in {"filtered_text_model", "filtered_binary_model"}
     if not runnable:
@@ -84,6 +109,18 @@ def materialize_colmap_subset(
         colmap_status=colmap_status,
         runnable=runnable,
     )
+
+
+def unique_paths(paths: list[Path]) -> list[Path]:
+    seen = set()
+    unique = []
+    for path in paths:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique.append(path)
+    return unique
 
 
 def materialize_sparse_text_model(

@@ -70,6 +70,7 @@ def prepare_stage1(
     scenes = filter_scenes(load_scene_records(registry_path, project_root=project), dataset_id, scene_ids)
     fastgs = FastGSIntegration.discover(root=fastgs_root, python=fastgs_python, project_root=project)
     fastgs_options = config.get("evaluation", {}).get("fastgs", {})
+    method_runs = expand_method_runs(selected_methods, config, default_seed=seed)
     root = Path(output_root) if output_root else project / "runs" / experiment_id / "prepared"
     if not root.is_absolute():
         root = project / root
@@ -85,16 +86,24 @@ def prepare_stage1(
         if not image_paths:
             warnings.append(f"{scene.dataset_id}/{scene.scene_id}: no images found at {scene.images_path}")
             continue
+        train_indices, test_indices, split_policy = fastgs_eval_split(
+            image_names,
+            enabled=bool(fastgs_options.get("eval_split", True)),
+            llffhold=int(fastgs_options.get("llffhold", 8)),
+        )
+        candidate_image_paths = [image_paths[index] for index in train_indices]
+        candidate_image_names = [image_names[index] for index in train_indices]
+        test_image_paths = [image_paths[index] for index in test_indices]
 
-        for method in selected_methods:
-            work_dir = root / safe_id(scene.dataset_id) / safe_id(scene.scene_id) / safe_id(method) / ratio_slug(selected_ratio)
+        for method, run_id, run_seed in method_runs:
+            work_dir = root / safe_id(scene.dataset_id) / safe_id(scene.scene_id) / safe_id(run_id) / ratio_slug(selected_ratio)
             try:
-                feature_vectors = load_method_features(scene, method, image_names)
-                indices = select_ratio_indices(
+                feature_vectors = load_method_features(scene, method, candidate_image_names)
+                local_indices = select_ratio_indices(
                     method,
-                    len(image_paths),
+                    len(candidate_image_paths),
                     selected_ratio,
-                    seed=seed,
+                    seed=run_seed if run_seed is not None else seed,
                     feature_vectors=feature_vectors,
                 )
             except ValueError as exc:
@@ -102,25 +111,29 @@ def prepare_stage1(
                     write_pending_manifest(
                         work_dir=work_dir,
                         scene=scene,
-                        method=method,
-                        total_images=len(image_paths),
+                        method=run_id,
+                        total_images=len(candidate_image_paths),
                         ratio=selected_ratio,
                         note=str(exc),
                         project=project,
                     )
                 )
                 continue
+            selected_full_indices = [train_indices[index] for index in local_indices]
 
             materialized = None
             subset_source = None
             if materialize:
                 materialized = materialize_colmap_subset(
                     scene=scene,
-                    image_paths=image_paths,
-                    selected_indices=indices,
+                    image_paths=candidate_image_paths,
+                    selected_indices=local_indices,
                     output_dir=work_dir / "fastgs_source",
                     project_root=project,
                     overwrite=overwrite,
+                    test_image_paths=test_image_paths,
+                    split_policy=split_policy,
+                    selected_source_indices=selected_full_indices,
                 )
                 subset_source = materialized.source_path
             else:
@@ -146,10 +159,17 @@ def prepare_stage1(
                 write_ready_manifest(
                     work_dir=work_dir,
                     scene=scene,
-                    method=method,
-                    image_names=image_names,
-                    indices=indices,
+                    method=run_id,
+                    base_method=method,
+                    seed=run_seed,
+                    image_names=candidate_image_names,
+                    indices=local_indices,
+                    source_indices=selected_full_indices,
                     ratio=selected_ratio,
+                    full_image_count=len(image_paths),
+                    train_candidate_count=len(candidate_image_paths),
+                    test_count=len(test_image_paths),
+                    split_policy=split_policy,
                     subset_source=subset_source,
                     command=command,
                     command_text=fastgs.format_command(command),
@@ -165,7 +185,7 @@ def prepare_stage1(
         "dataset_filter": dataset_id,
         "scene_filters": scene_ids or [],
         "ratio": selected_ratio,
-        "methods": selected_methods,
+        "methods": [run_id for _method, run_id, _seed in method_runs],
         "output_root": relative_to_root(root, project),
         "prepared": [asdict(run) for run in prepared],
         "warnings": warnings,
@@ -177,6 +197,41 @@ def first_ratio(config: dict[str, Any]) -> float:
     if not ratios:
         raise ValueError("Stage 1 config must define budgets.ratios")
     return float(ratios[0])
+
+
+def expand_method_runs(
+    methods: list[str],
+    config: dict[str, Any],
+    *,
+    default_seed: int,
+) -> list[tuple[str, str, int | None]]:
+    repeats = config.get("selection_repeats", {})
+    expanded = []
+    for method in methods:
+        seeds = repeats.get(method, {}).get("seeds")
+        if seeds:
+            for seed in seeds:
+                expanded.append((method, f"{method}_seed{int(seed):03d}", int(seed)))
+        elif method == "random_ratio":
+            expanded.append((method, f"{method}_seed{default_seed:03d}", default_seed))
+        else:
+            expanded.append((method, method, None))
+    return expanded
+
+
+def fastgs_eval_split(
+    image_names: list[str],
+    *,
+    enabled: bool,
+    llffhold: int,
+) -> tuple[list[int], list[int], str]:
+    if not enabled:
+        return list(range(len(image_names))), [], "all_train"
+    sorted_indices = sorted(range(len(image_names)), key=lambda index: Path(image_names[index]).stem)
+    test_indices = [image_index for order_index, image_index in enumerate(sorted_indices) if order_index % llffhold == 0]
+    test_set = set(test_indices)
+    train_indices = [index for index in sorted_indices if index not in test_set]
+    return train_indices, test_indices, f"fastgs_eval_llffhold_{llffhold}"
 
 
 def filter_scenes(
@@ -223,9 +278,16 @@ def write_ready_manifest(
     work_dir: Path,
     scene: SceneRecord,
     method: str,
+    base_method: str,
+    seed: int | None,
     image_names: list[str],
     indices: list[int],
+    source_indices: list[int],
     ratio: float,
+    full_image_count: int,
+    train_candidate_count: int,
+    test_count: int,
+    split_policy: str,
     subset_source: Path,
     command: list[str],
     command_text: str,
@@ -249,12 +311,19 @@ def write_ready_manifest(
         "dataset_id": scene.dataset_id,
         "scene_id": scene.scene_id,
         "method": method,
+        "base_method": base_method,
+        "seed": seed,
         "status": status,
         "requested_ratio": ratio,
         "actual_ratio": len(indices) / len(image_names),
+        "full_image_count": full_image_count,
+        "train_candidate_count": train_candidate_count,
+        "heldout_test_count": test_count,
+        "split_policy": split_policy,
         "total_images": len(image_names),
         "selected_count": len(indices),
         "selected_indices": relative_to_root(selected_indices_path, project),
+        "selected_source_indices": source_indices,
         "selected_images": relative_to_root(selected_images_path, project),
         "subset_source": relative_to_root(subset_source, project),
         "fastgs_command_script": relative_to_root(command_path, project),
