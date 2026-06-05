@@ -25,6 +25,8 @@ PYTHONPATH=src python -m vggt_omega_selector.cli.manage fastgs-preflight --stric
 
 1.2. 对 Stage 1 prepared source，确认 FastGS COLMAP reader 会优先使用 `stage1_split.json`。日志应出现类似 `Using stage1_split.json: 51 train cameras, 37 test cameras`；不能让原生 `--eval` 对物化后的 source 重新 llffhold。
 
+1.3. 对 random/uniform prepared runs，split 必须先在 full image set 上按 llffhold 计算 test set，再从非 test pool 中选择 train subset。`scripts/run_fastgs_random_uniform_queue.sh prepare` 会校验 `stage1_split.json`、full-scene test set、selected train set 和 train/test disjoint。
+
 2. 为每个 scene 生成 20% baseline 子集和 FastGS source/command：
 
 ```bash
@@ -35,8 +37,17 @@ PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage1-prepare \
 ```
 
 3. 缓存 full-set 和 subset 的 register/readout embedding。
-4. 执行每个 prepared run 下的 `fastgs_train.sh`。
-5. 写入 `runs/.../metrics.json`。
+4. 执行 FastGS 训练。random/uniform 的 `images_4` 30k 矩阵可用队列脚本：
+
+```bash
+bash scripts/run_fastgs_random_uniform_queue.sh prepare
+bash scripts/run_fastgs_random_uniform_queue.sh launch
+bash scripts/run_fastgs_random_uniform_queue.sh status
+```
+
+该脚本默认写入每个 run 下的 `fastgs_output_images4_30k`，使用 `--images images_4 --iterations 30000 --densification_interval 100`。
+
+5. 写入 FastGS `results.json`，必要时同步到项目级 `metrics.json`。
 6. 汇总散点和 Spearman/Pearson 到 `results.md`。
 
 ## 记录一次运行
@@ -59,6 +70,6 @@ PYTHONPATH=src python -m vggt_omega_selector.cli.manage record-run \
 - `fastgs_train.sh`
 - VGGT cache `manifest.json`
 - `camera_and_register_tokens.pt` / `register_tokens.pt`
-- `metrics.json`
+- FastGS `results.json` 或项目级 `metrics.json`
 - `manifest.yaml`
 - 可选：在 manifest 中记录散点图路径。
