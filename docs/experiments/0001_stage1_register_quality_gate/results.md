@@ -1,6 +1,6 @@
 # 结果
 
-第一阶段准备流程和 FastGS random/uniform baseline 矩阵已经完成，register/readout 相关性仍待补齐。
+第一阶段准备流程、FastGS random/uniform baseline 矩阵，以及 mean-pooled register-token similarity 分析已经完成；训练式 readout head 和更强 baseline 仍待补齐。
 
 - VGGT-OMEGA 严格预检：通过。
 - FastGS 严格预检：通过。
@@ -12,6 +12,7 @@
 - FastGS `diff-gaussian-rasterization_fastgs` 已应用本地 `fix1` 并用 CUDA 12.8 / `TORCH_CUDA_ARCH_LIST=12.0` 重编译；bonsai full source 和两个 20% prepared source 已完成 30k 训练及评估。
 - FastGS COLMAP reader 已补充 `stage1_split.json` 支持；prepared source 开启 `--eval` 时会使用 Stage 1 固定的 train/test 划分，而不是对物化后的 source 重新执行 llffhold。
 - 正式 random/uniform 矩阵使用 cropped/downsampled `images_4`，`--iterations 30000`，`--densification_interval 100`，FastGS 默认 `resolution=-1`。
+- VGGT-OMEGA register-token cache 已完成：13 个 full-train(non-test) reference + 78 个 random/uniform subset，共 91/91 成功。
 
 ## 运行记录
 
@@ -26,12 +27,12 @@
 | prepared/3dgsdata/mipnerf360_bonsai/uniform_stride_ratio/ratio_020/fastgs_output_res800_30k_fix1 | uniform_stride_ratio_diag | 3dgsdata/mipnerf360_bonsai | 0.20 | pending | 29.4434 | 0.9306 | 0.1191 | 诊断 run：同上，实际评估 11 张 test view；不作为质量门正式口径。 |
 | prepared/3dgsdata/mipnerf360_bonsai/random_ratio_seed000/ratio_020/fastgs_output_res800_30k_fix1_stage1split | random_ratio_seed000 | 3dgsdata/mipnerf360_bonsai | 0.20 | pending | 28.1985 | 0.9171 | 0.1313 | 正式 Stage 1 split run：FastGS 使用 `stage1_split.json`，51 train / 37 held-out test views，训练耗时 70.58s。`metrics.json` 已写入该 run。 |
 | prepared/3dgsdata/mipnerf360_bonsai/uniform_stride_ratio/ratio_020/fastgs_output_res800_30k_fix1_stage1split | uniform_stride_ratio | 3dgsdata/mipnerf360_bonsai | 0.20 | pending | 28.6207 | 0.9186 | 0.1229 | 正式 Stage 1 split run：FastGS 使用 `stage1_split.json`，51 train / 37 held-out test views，训练耗时 71.95s。`metrics.json` 已写入该 run。 |
-| prepared/3dgsdata/*/random_ratio_seed000/ratio_020/fastgs_output_images4_30k | random_ratio_seed000 | 3dgsdata | 0.20 | pending | 22.3184 | 0.6863 | 0.2673 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
-| prepared/3dgsdata/*/random_ratio_seed001/ratio_020/fastgs_output_images4_30k | random_ratio_seed001 | 3dgsdata | 0.20 | pending | 22.0161 | 0.6757 | 0.2732 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
-| prepared/3dgsdata/*/random_ratio_seed002/ratio_020/fastgs_output_images4_30k | random_ratio_seed002 | 3dgsdata | 0.20 | pending | 22.3021 | 0.6887 | 0.2661 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
-| prepared/3dgsdata/*/random_ratio_seed003/ratio_020/fastgs_output_images4_30k | random_ratio_seed003 | 3dgsdata | 0.20 | pending | 22.1264 | 0.6858 | 0.2688 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
-| prepared/3dgsdata/*/random_ratio_seed004/ratio_020/fastgs_output_images4_30k | random_ratio_seed004 | 3dgsdata | 0.20 | pending | 22.2143 | 0.6813 | 0.2699 | 13 条正式 Stage 1 split run 均完成；表中为该 seed 的 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
-| prepared/3dgsdata/*/uniform_stride_ratio/ratio_020/fastgs_output_images4_30k | uniform_stride_ratio | 3dgsdata | 0.20 | pending | 22.7165 | 0.6978 | 0.2583 | 13 条正式 Stage 1 split run 均完成；表中为 13 scene mean。使用 `images_4`、30k iterations、densification interval 100。 |
+| prepared/3dgsdata/*/random_ratio_seed000/ratio_020/fastgs_output_images4_30k | random_ratio_seed000 | 3dgsdata | 0.20 | see CSV | 22.3184 | 0.6863 | 0.2673 | 13 条正式 Stage 1 split run 均完成；表中仅为台账均值，不作为相关性判断。register similarity 只按 scene 内比较，详见 CSV。 |
+| prepared/3dgsdata/*/random_ratio_seed001/ratio_020/fastgs_output_images4_30k | random_ratio_seed001 | 3dgsdata | 0.20 | see CSV | 22.0161 | 0.6757 | 0.2732 | 13 条正式 Stage 1 split run 均完成；表中仅为台账均值，不作为相关性判断。register similarity 只按 scene 内比较，详见 CSV。 |
+| prepared/3dgsdata/*/random_ratio_seed002/ratio_020/fastgs_output_images4_30k | random_ratio_seed002 | 3dgsdata | 0.20 | see CSV | 22.3021 | 0.6887 | 0.2661 | 13 条正式 Stage 1 split run 均完成；表中仅为台账均值，不作为相关性判断。register similarity 只按 scene 内比较，详见 CSV。 |
+| prepared/3dgsdata/*/random_ratio_seed003/ratio_020/fastgs_output_images4_30k | random_ratio_seed003 | 3dgsdata | 0.20 | see CSV | 22.1264 | 0.6858 | 0.2688 | 13 条正式 Stage 1 split run 均完成；表中仅为台账均值，不作为相关性判断。register similarity 只按 scene 内比较，详见 CSV。 |
+| prepared/3dgsdata/*/random_ratio_seed004/ratio_020/fastgs_output_images4_30k | random_ratio_seed004 | 3dgsdata | 0.20 | see CSV | 22.2143 | 0.6813 | 0.2699 | 13 条正式 Stage 1 split run 均完成；表中仅为台账均值，不作为相关性判断。register similarity 只按 scene 内比较，详见 CSV。 |
+| prepared/3dgsdata/*/uniform_stride_ratio/ratio_020/fastgs_output_images4_30k | uniform_stride_ratio | 3dgsdata | 0.20 | see CSV | 22.7165 | 0.6978 | 0.2583 | 13 条正式 Stage 1 split run 均完成；表中仅为台账均值，不作为相关性判断。register similarity 只按 scene 内比较，详见 CSV。 |
 
 ## Random/Uniform `images_4` 30k 矩阵
 
@@ -43,16 +44,10 @@
 - FastGS 参数为 `--eval --images images_4 --iterations 30000 --densification_interval 100`，模型配置记录的 `resolution=-1`。
 - 测试集先从 full image set 按 full-scene llffhold 切出；train set 再从非 test pool 中选取。`scripts/run_fastgs_random_uniform_queue.sh prepare` 会校验每个 run 有 `stage1_split.json`、`test_images` 等于 full-scene llffhold split、`train_images` 等于 selected subset，且 train/test 不相交。
 
-汇总指标不合并不同 random seed；每个 `random_ratio_seedXXX` 独立计算平均。`all` 是 13 个 scene 的平均，`mipnerf360` / `tandt` / `db` 是按数据集组分别平均。
+下表只作为 FastGS 矩阵运行概览，不用于判断 register similarity 是否有效。质量门相关性必须在同一个 scene 内比较 5 个 random 和 1 个 uniform，不把不同 scene 的同名 random seed 直接混成一个判断统计。
 
 | Dataset | Method | Runs | PSNR mean | SSIM mean | LPIPS mean |
 |---|---|---:|---:|---:|---:|
-| all | random_seed000 | 13 | 22.3184 | 0.6863 | 0.2673 |
-| all | random_seed001 | 13 | 22.0161 | 0.6757 | 0.2732 |
-| all | random_seed002 | 13 | 22.3021 | 0.6887 | 0.2661 |
-| all | random_seed003 | 13 | 22.1264 | 0.6858 | 0.2688 |
-| all | random_seed004 | 13 | 22.2143 | 0.6813 | 0.2699 |
-| all | uniform | 13 | 22.7165 | 0.6978 | 0.2583 |
 | mipnerf360 | random_seed000 | 9 | 22.7658 | 0.6578 | 0.2872 |
 | mipnerf360 | random_seed001 | 9 | 22.4022 | 0.6414 | 0.2963 |
 | mipnerf360 | random_seed002 | 9 | 22.6333 | 0.6583 | 0.2869 |
@@ -72,7 +67,7 @@
 | db | random_seed004 | 2 | 22.6253 | 0.7398 | 0.2711 |
 | db | uniform | 2 | 23.2447 | 0.7538 | 0.2586 |
 
-PSNR 上，`all`、`mipnerf360` 和 `db` 组最高的是 `uniform`；`tandt` 组最高的是 `random_seed004`。LPIPS 越低越好。
+PSNR 上，`mipnerf360` 和 `db` 组最高的是 `uniform`；`tandt` 组最高的是 `random_seed004`。LPIPS 越低越好。
 
 按 scene 的 PSNR 分列如下，便于后续排查 seed 差异：
 
@@ -94,9 +89,50 @@ PSNR 上，`all`、`mipnerf360` 和 `db` 组最高的是 `uniform`；`tandt` 组
 
 ## 相关性
 
-- register cosine vs FastGS PSNR 的 Spearman rho：pending
-- register cosine vs FastGS PSNR 的 Pearson r：pending
-- 质量门：pending；random/uniform 的跨 scene / 多 seed FastGS 质量矩阵已完成，但还缺 register similarity 和对应相关性分析。
+本轮只评估一个透明 proxy：`register_mean_cosine`。具体做法是对 VGGT-OMEGA `register_tokens` 在 batch、frame、register 维度做 mean pooling，得到一个 scene/subset 向量；每个 subset 与同 scene 的 full-train(non-test) reference 向量计算 cosine。它不是训练后的 readout head。
+
+输入口径：
+
+- full reference：每个 scene 的 full image set 先按 full-scene llffhold 排除 test，再把剩余 train candidates 输入 VGGT-OMEGA。
+- subset：同一 scene 内 5 个 `random_ratio_seed000-004` 和 1 个 `uniform_stride_ratio` 的 `stage1_split.json/train_images`。
+- VGGT-OMEGA：checkpoint `vggt_omega_1b_512.pt`，`image_resolution=512`，`mode=balanced`。
+- 详细 CSV：[subset_register_similarity.csv](register_similarity/subset_register_similarity.csv)，[scene_register_correlations.csv](register_similarity/scene_register_correlations.csv)。
+
+方向统计如下。每个 scene 先在 6 个候选子集内计算一次相关性，再对 13 个 scene 汇总；不把不同 scene 的 subset 样本直接混在一起。
+
+| Metric | Expected direction | Mean Spearman | Spearman sign | Mean Pearson | Pearson sign |
+|---|---|---:|---:|---:|---:|
+| PSNR | positive | 0.2088 | 9/13 | 0.2936 | 12/13 |
+| SSIM | positive | 0.2352 | 8/13 | 0.3876 | 13/13 |
+| LPIPS | negative | -0.2879 | 10/13 | -0.4423 | 13/13 |
+
+按数据集组汇总 scene-level Spearman：
+
+| Dataset | Scenes | PSNR mean rho | PSNR sign | SSIM mean rho | SSIM sign | LPIPS mean rho | LPIPS sign |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| mipnerf360 | 9 | 0.2317 | 6/9 | 0.2381 | 5/9 | -0.2825 | 6/9 |
+| tandt | 2 | 0.2286 | 2/2 | 0.2286 | 2/2 | -0.2857 | 2/2 |
+| db | 2 | 0.0857 | 1/2 | 0.2286 | 1/2 | -0.3143 | 2/2 |
+
+按 scene 的相关性：
+
+| Scene | PSNR rho/r | SSIM rho/r | LPIPS rho/r | Best cosine | Best PSNR |
+|---|---:|---:|---:|---|---|
+| db_drjohnson | 0.5429 / 0.4198 | 0.5429 / 0.4491 | -0.6000 / -0.3628 | uniform | random_seed003 |
+| db_playroom | -0.3714 / 0.2927 | -0.0857 / 0.5878 | -0.0286 / -0.5461 | random_seed001 | uniform |
+| mipnerf360_bicycle | -0.0286 / 0.2322 | -0.0286 / 0.1595 | 0.0286 / -0.2774 | random_seed001 | random_seed003 |
+| mipnerf360_bonsai | 0.0857 / 0.3058 | -0.0857 / 0.1598 | 0.1429 / -0.1493 | random_seed001 | uniform |
+| mipnerf360_counter | 0.0857 / 0.3660 | 0.2000 / 0.3643 | -0.3143 / -0.3717 | random_seed001 | uniform |
+| mipnerf360_flowers | -0.0286 / 0.3758 | -0.0286 / 0.2779 | -0.0286 / -0.3681 | random_seed001 | random_seed002 |
+| mipnerf360_garden | 0.9429 / 0.7955 | 0.7143 / 0.6437 | -0.8857 / -0.8083 | uniform | uniform |
+| mipnerf360_kitchen | 0.4286 / 0.4684 | 0.6571 / 0.7107 | -0.8286 / -0.7739 | uniform | uniform |
+| mipnerf360_room | 0.2571 / 0.5334 | -0.0857 / 0.3651 | -0.2000 / -0.7143 | uniform | random_seed000 |
+| mipnerf360_stump | 0.3714 / 0.0413 | 0.4857 / 0.3495 | -0.4857 / -0.2966 | uniform | uniform |
+| mipnerf360_treehill | -0.0286 / 0.0383 | 0.3143 / 0.3393 | 0.0286 / -0.3967 | uniform | random_seed004 |
+| tandt_train | 0.1429 / -0.1064 | 0.0857 / 0.3701 | -0.2571 / -0.3562 | uniform | random_seed004 |
+| tandt_truck | 0.3143 / 0.0545 | 0.3714 / 0.2621 | -0.3143 / -0.3286 | uniform | uniform |
+
+质量门结论：mean-pooled register token proxy 有一定方向性，尤其 Pearson 的方向较稳定，但 Spearman 均值远低于通过建议阈值 0.5，且 best-cosine 与 best-quality 只在 4/13 个 scene 上一致。因此不能基于这个 proxy 通过 Stage 1；下一步应补训练式 readout 或更强几何 proxy，再和 feature/register k-center 等 baseline 一起复核。
 
 ## 观察
 
@@ -109,4 +145,4 @@ PSNR 上，`all`、`mipnerf360` 和 `db` 组最高的是 `uniform`；`tandt` 组
 - 本地 FastGS rasterizer fix1 做了三类保护：过滤低 opacity 或非法 compact-box 的 splat，初始化未写满的 tile key/list，并在 tile range 写入前检查 tile id 边界。
 - fix1 重编译后，bonsai full source、`random_ratio_seed000` 20% source、`uniform_stride_ratio` 20% source 均完成 30k 训练、test render 和 metrics 评估。
 - FastGS 原生 COLMAP `--eval` 会对当前 source 内全部图片重新按 llffhold 切分；对 Stage 1 prepared source 这会把部分 held-out 图片混回训练集。已在 FastGS `scene/dataset_readers.py` 中加入 `stage1_split.json` 优先逻辑，并重跑 random/uniform 两条 20% sanity run。
-- random/uniform `images_4` 30k 矩阵稳定完成，当前 blocker 转为补齐 register/readout embedding、register similarity 和相关性分析。
+- random/uniform `images_4` 30k 矩阵稳定完成；mean-pooled register-token similarity 已补齐，但不足以通过质量门，当前 blocker 转为训练/校准 readout 或更换几何 proxy，并补齐 feature/register k-center。

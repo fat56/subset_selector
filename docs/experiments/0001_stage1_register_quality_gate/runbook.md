@@ -36,7 +36,14 @@ PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage1-prepare \
   --overwrite
 ```
 
-3. 缓存 full-set 和 subset 的 register/readout embedding。
+3. 缓存 full-set 和 subset 的 register embedding，并计算 scene 内相似度/质量相关性：
+
+```bash
+PYTHONPATH=src python scripts/run_stage1_register_similarity.py
+```
+
+该脚本会对每个 scene 缓存 full-train(non-test) reference、5 个 random subset 和 1 个 uniform subset 的 VGGT-OMEGA register tokens，写入 `caches/vggt_omega/0001_stage1_register_quality_gate/register_similarity_images512`，并输出文档 CSV 到 `docs/experiments/0001_stage1_register_quality_gate/register_similarity/`。
+
 4. 执行 FastGS 训练。random/uniform 的 `images_4` 30k 矩阵可用队列脚本：
 
 ```bash
@@ -48,7 +55,7 @@ bash scripts/run_fastgs_random_uniform_queue.sh status
 该脚本默认写入每个 run 下的 `fastgs_output_images4_30k`，使用 `--images images_4 --iterations 30000 --densification_interval 100`。
 
 5. 写入 FastGS `results.json`，必要时同步到项目级 `metrics.json`。
-6. 汇总散点和 Spearman/Pearson 到 `results.md`。
+6. 汇总 scene 内 Spearman/Pearson 到 `results.md`。
 
 ## 记录一次运行
 
@@ -70,6 +77,9 @@ PYTHONPATH=src python -m vggt_omega_selector.cli.manage record-run \
 - `fastgs_train.sh`
 - VGGT cache `manifest.json`
 - `camera_and_register_tokens.pt` / `register_tokens.pt`
+- `register_mean_embedding.json`
+- `register_similarity/subset_register_similarity.csv`
+- `register_similarity/scene_register_correlations.csv`
 - FastGS `results.json` 或项目级 `metrics.json`
 - `manifest.yaml`
 - 可选：在 manifest 中记录散点图路径。

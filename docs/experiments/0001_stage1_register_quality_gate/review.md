@@ -2,7 +2,7 @@
 
 ## 决策
 
-待定。准备流程、smoke 训练、bonsai 上使用 `stage1_split.json` 的 20% 30k FastGS sanity runs，以及 13 个 scene 的 random/uniform `images_4` 30k FastGS 矩阵都已经通过；但 register similarity 和相关性分析尚未补齐，当前不能据此通过或否决质量门。
+当前不能通过 Stage 1 质量门。准备流程、smoke 训练、bonsai 上使用 `stage1_split.json` 的 20% 30k FastGS sanity runs，以及 13 个 scene 的 random/uniform `images_4` 30k FastGS 矩阵都已经通过；但 mean-pooled register-token proxy 与质量指标的 scene 内 Spearman 相关性偏弱，不能支持进入 selector 训练。
 
 ## 证据
 
@@ -14,12 +14,15 @@
 - 已完成 random/uniform `images_4` 30k 矩阵：78/78 done，0 failed，覆盖 13 个 scene x 5 random seed 以及 13 个 uniform stride run。
 - Prepared source 评估语义修正：FastGS 已优先读取 `stage1_split.json`，避免原生 llffhold 对物化后的 source 重新切分。
 - 正式矩阵的 split 校验：test split 先从 full image set 按 llffhold 计算，train split 再从非 test pool 中选择；队列脚本会拒绝 test set 不等于 full-scene llffhold 的 run。
+- 已完成 VGGT-OMEGA register-token cache：13 个 full-train(non-test) reference + 78 个 random/uniform subset，共 91/91 成功。
+- `register_mean_cosine` scene 内相关性：PSNR mean Spearman 0.2088，SSIM mean Spearman 0.2352，LPIPS mean Spearman -0.2879；best-cosine 与 best-quality 只在 4/13 个 scene 上一致。
+- 详细表：[register_similarity/subset_register_similarity.csv](register_similarity/subset_register_similarity.csv) 和 [register_similarity/scene_register_correlations.csv](register_similarity/scene_register_correlations.csv)。
 
 ## 下一步
 
 - 保持 FastGS `diff-gaussian-rasterization_fastgs` 的本地 fix1，并在新环境中先跑一条 bonsai 30k sanity check。
 - 保持 FastGS COLMAP reader 的 `stage1_split.json` 支持；prepared run 的正式指标必须使用该 split 口径。
-- 缓存 full-set 与 subset 的 VGGT-OMEGA register/readout embedding。
-- 汇总 register similarity 与 FastGS PSNR/SSIM/LPIPS 的 Spearman/Pearson，并检查 scene/seed 级失败样本。
+- 不基于 mean-pooled register-token proxy 进入 Stage 2 selector 训练。
+- 训练或校准一个 readout head，或改用更强几何 proxy 后，重新计算 scene 内相似度与 FastGS PSNR/SSIM/LPIPS 的关系。
 - 生成或登记 feature/register per-image feature JSON 后，再启用 `feature_k_center` 和 `register_k_center`。
 - 基于完整相关性、散点图和失败样本，再更新本复盘结论。
