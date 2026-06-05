@@ -16,3 +16,6 @@ external/FastGS -> <your FastGS checkout>
 
 Use `FASTGS_ROOT` / `FASTGS_PYTHON` or the CLI `--fastgs-root` /
 `--fastgs-python` flags if the checkout lives elsewhere.
+
+On this RTX 5090 machine, `external/FastGS` is a local clone with a uv-managed
+`.venv`; the checkout itself is ignored by the selector git repository.

@@ -465,6 +465,20 @@ def print_fastgs_preflight_report(report: dict) -> None:
     print(f"  train_script: {report['train_script']} ({'ok' if report['train_script_exists'] else 'missing'})")
     print(f"  git_commit: {report.get('git_commit') or 'unknown'}")
     print(f"  git_dirty: {str(report.get('git_dirty')).lower()}")
+    probe = report.get("import_probe", {})
+    if probe.get("ok"):
+        print(
+            "  import: ok "
+            f"(torch {probe.get('torch')}, cuda {probe.get('torch_cuda')}, "
+            f"numpy {probe.get('numpy')}, devices={probe.get('device_count')})"
+        )
+        for device in probe.get("devices", []):
+            capability = ".".join(str(part) for part in device.get("capability", []))
+            print(f"    - cuda:{device.get('index')} {device.get('name')} sm_{capability}")
+    else:
+        print("  import: failed")
+        if probe.get("stderr"):
+            print(f"    stderr: {probe['stderr']}")
 
 
 def print_stage1_summary(summary: dict) -> None:

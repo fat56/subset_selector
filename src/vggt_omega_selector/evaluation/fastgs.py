@@ -82,7 +82,71 @@ class FastGSIntegration:
             "train_script_exists": self.train_script.exists(),
             "git_commit": git_output(self.root, ["git", "rev-parse", "--short", "HEAD"]),
             "git_dirty": bool(git_output(self.root, ["git", "status", "--porcelain"])),
+            "import_probe": self.import_probe(),
         }
+
+    def import_probe(self) -> dict[str, Any]:
+        code = r"""
+import json
+import numpy
+import torch
+import torchvision
+from simple_knn._C import distCUDA2
+from fused_ssim import fused_ssim
+from diff_gaussian_rasterization_fastgs import GaussianRasterizationSettings, GaussianRasterizer
+
+devices = []
+for index in range(torch.cuda.device_count()):
+    devices.append({
+        "index": index,
+        "name": torch.cuda.get_device_name(index),
+        "capability": list(torch.cuda.get_device_capability(index)),
+    })
+
+print(json.dumps({
+    "ok": True,
+    "torch": torch.__version__,
+    "torch_cuda": torch.version.cuda,
+    "torchvision": torchvision.__version__,
+    "numpy": numpy.__version__,
+    "cuda_available": torch.cuda.is_available(),
+    "device_count": torch.cuda.device_count(),
+    "devices": devices,
+    "extensions": {
+        "simple_knn": distCUDA2.__name__,
+        "fused_ssim": fused_ssim.__name__,
+        "diff_gaussian_rasterization_fastgs": GaussianRasterizer.__name__,
+    },
+}))
+"""
+        completed = subprocess.run(
+            [str(self.python), "-c", code],
+            cwd=self.root,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if completed.returncode != 0:
+            return {
+                "ok": False,
+                "returncode": completed.returncode,
+                "stderr": completed.stderr.strip(),
+                "stdout": completed.stdout.strip(),
+            }
+        lines = [line for line in completed.stdout.splitlines() if line.strip()]
+        try:
+            import json
+
+            return json.loads(lines[-1])
+        except (IndexError, json.JSONDecodeError) as exc:
+            return {
+                "ok": False,
+                "returncode": completed.returncode,
+                "parse_error": str(exc),
+                "stdout": completed.stdout.strip(),
+                "stderr": completed.stderr.strip(),
+            }
 
 
 def resolve_fastgs_root(project_root: Path, root: str | Path | None = None) -> Path:
@@ -129,7 +193,12 @@ def resolve_fastgs_python(root: Path, python: str | Path | None = None, project_
 
 
 def fastgs_preflight_ok(report: dict[str, Any]) -> bool:
-    return bool(report.get("root_exists")) and bool(report.get("python_exists")) and bool(report.get("train_script_exists"))
+    return (
+        bool(report.get("root_exists"))
+        and bool(report.get("python_exists"))
+        and bool(report.get("train_script_exists"))
+        and bool(report.get("import_probe", {}).get("ok"))
+    )
 
 
 def git_output(cwd: Path, command: list[str]) -> str:

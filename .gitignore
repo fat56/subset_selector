@@ -17,6 +17,8 @@ data/raw/
 data/interim/
 data/processed/
 data/external/
+external/FastGS/
+external/fastgs/
 output/
 outputs/
 artifacts/
@@ -44,4 +46,3 @@ runs/**/cache/
 runs/**/checkpoints/
 runs/**/logs/
 runs/**/renders/
-

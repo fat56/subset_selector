@@ -114,6 +114,51 @@ PYTHONPATH=src python -m vggt_omega_selector.cli.manage vggt-cache \
 
 详见 [docs/integrations/vggt_omega.md](docs/integrations/vggt_omega.md)。
 
+## FastGS 5090 Environment
+
+Stage 1 使用 FastGS 作为 GS 重建后端。当前机器是双 RTX 5090，FastGS 环境按
+`fat56/VFM_GS` 的 5090 迁移经验重新创建，不复用旧 4090/conda/cu116 环境：
+
+```bash
+git clone --recursive https://github.com/fastgs/FastGS.git external/FastGS
+uv venv external/FastGS/.venv --python 3.10
+
+UV_HTTP_TIMEOUT=600 uv pip install \
+  --python external/FastGS/.venv/bin/python \
+  torch torchvision torchaudio \
+  --index-url https://download.pytorch.org/whl/cu128
+
+UV_HTTP_TIMEOUT=600 uv pip install \
+  --python external/FastGS/.venv/bin/python \
+  "numpy<2" plyfile pyyaml tqdm websockets packaging wheel ninja
+
+export CUDA_HOME=/usr/local/cuda-12.8
+export PATH=/usr/local/cuda-12.8/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-12.8/lib64:${LD_LIBRARY_PATH:-}
+export TORCH_CUDA_ARCH_LIST="12.0"
+export CC=/usr/bin/gcc-11
+export CXX=/usr/bin/g++-11
+export MAX_JOBS=8
+
+uv pip install --python external/FastGS/.venv/bin/python --no-build-isolation \
+  external/FastGS/submodules/simple-knn
+uv pip install --python external/FastGS/.venv/bin/python --no-build-isolation \
+  external/FastGS/submodules/fused-ssim
+uv pip install --python external/FastGS/.venv/bin/python --no-build-isolation \
+  external/FastGS/submodules/diff-gaussian-rasterization_fastgs
+```
+
+验证：
+
+```bash
+PYTHONPATH=src python -m vggt_omega_selector.cli.manage fastgs-preflight --strict
+external/FastGS/.venv/bin/python external/FastGS/train.py --help
+```
+
+当前验证通过的关键版本：Python 3.10.18、PyTorch `2.11.0+cu128`、
+CUDA runtime `12.8`、NumPy `1.26.4`，两张 RTX 5090 capability 均为 `12.0`。
+详见 [docs/integrations/fastgs.md](docs/integrations/fastgs.md)。
+
 ## Git Policy
 
 - `docs/`、`configs/`、`src/`、`scripts/`、轻量 `runs/**/manifest.yaml` 与指标文件适合进入 git。
