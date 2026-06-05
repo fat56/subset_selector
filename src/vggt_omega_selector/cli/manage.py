@@ -12,7 +12,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from vggt_omega_selector.backbones.vggt_omega import VGGTOmegaIntegration
+from vggt_omega_selector.evaluation.fastgs import FastGSIntegration, fastgs_preflight_ok
 from vggt_omega_selector.project import find_project_root, relative_to_root
+from vggt_omega_selector.stage1 import DEFAULT_STAGE1_CONFIG, prepare_stage1
 
 
 METRICS_TEMPLATE = {
@@ -74,6 +76,13 @@ def main(argv: list[str] | None = None) -> int:
     preflight.add_argument("--strict", action="store_true", help="Exit non-zero if any required check fails.")
     preflight.set_defaults(func=cmd_vggt_preflight)
 
+    fastgs_preflight = subparsers.add_parser("fastgs-preflight", help="Check the local FastGS integration.")
+    fastgs_preflight.add_argument("--root", default=None, help="Optional FastGS root override.")
+    fastgs_preflight.add_argument("--python", default=None, help="Optional FastGS Python interpreter override.")
+    fastgs_preflight.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+    fastgs_preflight.add_argument("--strict", action="store_true", help="Exit non-zero if FastGS is not ready.")
+    fastgs_preflight.set_defaults(func=cmd_fastgs_preflight)
+
     cache = subparsers.add_parser("vggt-cache", help="Run VGGT-OMEGA and cache tensor outputs.")
     cache.add_argument("--root", default=None, help="Optional VGGT-OMEGA root override.")
     cache.add_argument("--python", default=None, help="Optional VGGT-OMEGA Python interpreter override.")
@@ -91,6 +100,24 @@ def main(argv: list[str] | None = None) -> int:
     cache.add_argument("--enable-alignment", action="store_true")
     cache.add_argument("--strict-load", action="store_true")
     cache.set_defaults(func=cmd_vggt_cache)
+
+    stage1 = subparsers.add_parser(
+        "stage1-prepare",
+        help="Prepare ratio-based Stage 1 subsets and FastGS command scripts.",
+    )
+    stage1.add_argument("--config", default=DEFAULT_STAGE1_CONFIG, help="Stage 1 experiment config.")
+    stage1.add_argument("--dataset", default=None, help="Optional dataset id filter.")
+    stage1.add_argument("--scene", action="append", default=[], help="Optional scene id filter. Can be repeated.")
+    stage1.add_argument("--method", action="append", default=[], help="Optional method id override. Can be repeated.")
+    stage1.add_argument("--ratio", type=float, default=None, help="Optional ratio override. Defaults to config ratio.")
+    stage1.add_argument("--output-root", default=None, help="Output root for prepared run directories.")
+    stage1.add_argument("--seed", type=int, default=13, help="Seed for random-ratio baselines.")
+    stage1.add_argument("--overwrite", action="store_true", help="Overwrite existing materialized subset sources.")
+    stage1.add_argument("--no-materialize", action="store_true", help="Only write selection metadata; do not build sources.")
+    stage1.add_argument("--fastgs-root", default=None, help="Optional FastGS root override.")
+    stage1.add_argument("--fastgs-python", default=None, help="Optional FastGS Python interpreter override.")
+    stage1.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+    stage1.set_defaults(func=cmd_stage1_prepare)
 
     args = parser.parse_args(argv)
     return args.func(args)
@@ -258,6 +285,18 @@ def cmd_vggt_preflight(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fastgs_preflight(args: argparse.Namespace) -> int:
+    integration = FastGSIntegration.discover(root=args.root, python=args.python)
+    report = integration.preflight()
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print_fastgs_preflight_report(report)
+    if args.strict and not fastgs_preflight_ok(report):
+        return 1
+    return 0
+
+
 def cmd_vggt_cache(args: argparse.Namespace) -> int:
     image_paths = list(args.image) + list(args.images)
     if not image_paths and not args.image_list:
@@ -277,6 +316,27 @@ def cmd_vggt_cache(args: argparse.Namespace) -> int:
         enable_alignment=args.enable_alignment,
         strict_load=args.strict_load,
     )
+
+
+def cmd_stage1_prepare(args: argparse.Namespace) -> int:
+    summary = prepare_stage1(
+        config_path=args.config,
+        dataset_id=args.dataset,
+        scene_ids=args.scene or None,
+        methods=args.method or None,
+        ratio=args.ratio,
+        output_root=args.output_root,
+        seed=args.seed,
+        overwrite=args.overwrite,
+        materialize=not args.no_materialize,
+        fastgs_root=args.fastgs_root,
+        fastgs_python=args.fastgs_python,
+    )
+    if args.json:
+        print(json.dumps(summary, indent=2))
+    else:
+        print_stage1_summary(summary)
+    return 0
 
 
 def copy_template(root: Path, template_name: str, destination: Path) -> None:
@@ -396,6 +456,33 @@ def print_preflight_report(report: dict) -> None:
         size = checkpoint.get("size_bytes")
         size_gb = f"{size / (1024 ** 3):.2f} GiB" if size else "missing"
         print(f"    - {checkpoint['alias']}: {checkpoint['path']} ({size_gb})")
+
+
+def print_fastgs_preflight_report(report: dict) -> None:
+    print("FastGS integration")
+    print(f"  root: {report['root']} ({'ok' if report['root_exists'] else 'missing'})")
+    print(f"  python: {report['python']} ({'ok' if report['python_exists'] else 'missing'})")
+    print(f"  train_script: {report['train_script']} ({'ok' if report['train_script_exists'] else 'missing'})")
+    print(f"  git_commit: {report.get('git_commit') or 'unknown'}")
+    print(f"  git_dirty: {str(report.get('git_dirty')).lower()}")
+
+
+def print_stage1_summary(summary: dict) -> None:
+    print(f"Stage 1 preparation: {summary['experiment_id']}")
+    print(f"  config: {summary['config']}")
+    print(f"  ratio: {summary['ratio']:.2f}")
+    print(f"  methods: {', '.join(summary['methods']) if summary['methods'] else 'none'}")
+    print(f"  output_root: {summary['output_root']}")
+    for warning in summary.get("warnings", []):
+        print(f"  warning: {warning}")
+    prepared = summary.get("prepared", [])
+    print(f"  prepared runs: {len(prepared)}")
+    for run in prepared:
+        print(
+            "    - "
+            f"{run['dataset_id']}/{run['scene_id']} {run['method']}: "
+            f"{run['status']} ({run['selected_count']}/{run['total_images']})"
+        )
 
 
 def preflight_ok(report: dict) -> bool:

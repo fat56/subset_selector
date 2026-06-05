@@ -4,7 +4,7 @@ experiment:
   stage: stage1
   status: planned
 
-question: Does register/readout cosine similarity correlate with sparse-view 3DGS quality strongly enough to justify selector training?
+question: Does register/readout cosine similarity correlate with 20% sparse-view FastGS quality strongly enough to justify selector training?
 
 datasets:
   registry: data/datasets.yaml
@@ -21,17 +21,24 @@ teacher:
     sampling: dense_uniform_if_needed
 
 selection_methods:
-  - random_k
-  - uniform_stride_k
+  - random_ratio
+  - uniform_stride_ratio
   - feature_k_center
   - register_k_center
 
 budgets:
-  fixed_k: [5, 10, 20, 40]
-  ratios: [0.05, 0.10, 0.20]
+  fixed_k: []
+  ratios: [0.20]
+  count_policy: ceil_ratio_at_least_one
 
 evaluation:
-  reconstruction_backend: TBD_3DGS_or_InstantSplat
+  reconstruction_backend: fastgs
+  backend_config: configs/integrations/fastgs.yaml
+  fastgs:
+    eval_split: true
+    resolution: null
+    data_device: null
+    extra_args: []
   metrics:
     - register_cosine_similarity
     - psnr

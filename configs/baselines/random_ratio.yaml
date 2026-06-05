@@ -1,0 +1,11 @@
+baseline:
+  id: random_ratio
+  family: random
+  description: Deterministic random selection under a dataset-ratio budget.
+  budget_type: ratio
+  default_ratio: 0.20
+  seed: 13
+
+outputs:
+  - selected_indices
+  - selected_images

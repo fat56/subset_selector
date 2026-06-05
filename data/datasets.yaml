@@ -1,11 +1,49 @@
 datasets:
-  - id: placeholder_dataset
-    status: TODO
-    root: data/raw/placeholder_dataset
-    scenes: []
-    notes: Replace with real scene registry before running experiments.
+  - id: 3dgsdata
+    status: registered
+    root: data/raw/3dgsdata
+    image_dir: images
+    sparse_dir: sparse/0
+    image_glob: "*"
+    scenes:
+      - id: mipnerf360_bicycle
+        root: mipnerf360/bicycle
+      - id: mipnerf360_bonsai
+        root: mipnerf360/bonsai
+      - id: mipnerf360_counter
+        root: mipnerf360/counter
+      - id: mipnerf360_flowers
+        root: mipnerf360/flowers
+      - id: mipnerf360_garden
+        root: mipnerf360/garden
+      - id: mipnerf360_kitchen
+        root: mipnerf360/kitchen
+      - id: mipnerf360_room
+        root: mipnerf360/room
+      - id: mipnerf360_stump
+        root: mipnerf360/stump
+      - id: mipnerf360_treehill
+        root: mipnerf360/treehill
+      - id: db_drjohnson
+        root: tandt_db/db/drjohnson
+      - id: db_playroom
+        root: tandt_db/db/playroom
+      - id: tandt_train
+        root: tandt_db/tandt/train
+      - id: tandt_truck
+        root: tandt_db/tandt/truck
+    notes: Linked from /home/m/project/ltm/3dgsdata. COLMAP binary sparse models are filtered to text by stage1-prepare.
+
+    # Example scene entry:
+    # scenes:
+    #   - id: scene_001
+    #     root: data/raw/placeholder_dataset/scene_001
+    #     image_dir: images
+    #     sparse_dir: sparse/0
+    #     features:
+    #       feature_k_center: caches/features/scene_001_dino.json
+    #       register_k_center: caches/vggt_omega/scene_001_register_summary.json
 
 split_policy:
   unit: scene
   no_cross_scene_leakage: true
-

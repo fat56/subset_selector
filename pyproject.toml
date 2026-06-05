@@ -7,7 +7,7 @@ name = "vggt-omega-selector"
 version = "0.1.0"
 description = "Experiment framework for VGGT-OMEGA register-token subset selection research."
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["PyYAML>=6.0"]
 
 [project.scripts]
 vggt-selector = "vggt_omega_selector.cli.manage:main"
@@ -17,3 +17,5 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+testpaths = ["tests"]
+norecursedirs = ["data", "runs", "caches", "external"]

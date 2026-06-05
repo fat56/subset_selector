@@ -3,8 +3,9 @@
 ## Preconditions
 
 - `data/datasets.yaml` 已登记真实数据。
-- VGGT-OMEGA checkpoint 和 3DGS/InstantSplat backend 路径已在运行环境中可用。
-- `configs/experiments/0001_stage1_register_quality_gate.yaml` 已冻结本次预算和方法列表。
+- 每个 scene 有 FastGS/3DGS 可读的 `images/` 和 COLMAP `sparse/0` text 或 binary model。
+- VGGT-OMEGA checkpoint 和 FastGS backend 路径已在运行环境中可用。
+- `configs/experiments/0001_stage1_register_quality_gate.yaml` 已冻结本次 20% ratio 和方法列表。
 
 ## Planned Flow
 
@@ -14,11 +15,25 @@
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage vggt-preflight --strict
 ```
 
-1. 为每个 scene 生成 baseline 子集。
-2. 缓存 full-set 和 subset 的 register/readout embedding。
-3. 对每个子集运行 sparse-view 3DGS/InstantSplat 评测。
-4. 写入 `runs/.../metrics.json`。
-5. 汇总散点和 Spearman/Pearson 到 `results.md`。
+1. Run FastGS integration preflight:
+
+```bash
+PYTHONPATH=src python -m vggt_omega_selector.cli.manage fastgs-preflight --strict
+```
+
+2. 为每个 scene 生成 20% baseline 子集和 FastGS source/command：
+
+```bash
+PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage1-prepare \
+  --config configs/experiments/0001_stage1_register_quality_gate.yaml \
+  --dataset 3dgsdata \
+  --overwrite
+```
+
+3. 缓存 full-set 和 subset 的 register/readout embedding。
+4. 执行每个 prepared run 下的 `fastgs_train.sh`。
+5. 写入 `runs/.../metrics.json`。
+6. 汇总散点和 Spearman/Pearson 到 `results.md`。
 
 ## Record A Run
 
@@ -26,15 +41,18 @@ PYTHONPATH=src python -m vggt_omega_selector.cli.manage vggt-preflight --strict
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage record-run \
   --experiment 0001_stage1_register_quality_gate \
   --stage stage1 \
-  --method random_k \
+  --method random_ratio \
   --dataset <dataset_or_scene_set> \
   --config configs/experiments/0001_stage1_register_quality_gate.yaml \
-  --notes "baseline dry run"
+  --notes "20 percent FastGS baseline dry run"
 ```
 
 ## Required Artifacts
 
 - `selected_indices.txt` or `selected_indices.json`
+- `stage1_subset_manifest.json`
+- `fastgs_source/`
+- `fastgs_train.sh`
 - VGGT cache `manifest.json`
 - `camera_and_register_tokens.pt` / `register_tokens.pt`
 - `metrics.json`

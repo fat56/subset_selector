@@ -10,19 +10,14 @@ gate:
   pass_threshold: 0.5
   required_direction: positive
   stability_checks:
-    - multiple_k_values
+    - ratio_20_percent_budget
     - multiple_selection_methods
     - scene_level_split
   fail_action: add_geometry_auxiliary_or_redefine_proxy_before_selector_training
 
 budgets:
-  fixed_k:
-    - 5
-    - 10
-    - 20
-    - 40
   ratios:
-    - 0.05
-    - 0.10
     - 0.20
+  count_policy: ceil_ratio_at_least_one
 
+reconstruction_backend: fastgs

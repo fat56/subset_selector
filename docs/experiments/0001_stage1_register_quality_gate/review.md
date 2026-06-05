@@ -12,6 +12,6 @@ Pending.
 ## Next Actions
 
 - Register real datasets in `data/datasets.yaml`.
-- Implement or wrap first four baselines.
-- Decide the first reconstruction backend for Stage 1.
-
+- Install or link FastGS and run `fastgs-preflight`.
+- Run `stage1-prepare` for 20% random/uniform baselines.
+- Add feature/register feature JSON before enabling k-center baselines.

@@ -1,0 +1,10 @@
+baseline:
+  id: uniform_stride_ratio
+  family: uniform_stride
+  description: Evenly spaced frame selection under a dataset-ratio budget.
+  budget_type: ratio
+  default_ratio: 0.20
+
+outputs:
+  - selected_indices
+  - selected_images

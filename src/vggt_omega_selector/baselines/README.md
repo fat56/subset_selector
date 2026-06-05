@@ -2,8 +2,8 @@
 
 Planned baseline implementations:
 
-- random K
-- uniform stride K
+- random ratio
+- uniform stride ratio
 - DINO/CLIP feature k-center
 - VGGT register-summary k-center
 - facility-location greedy
@@ -11,4 +11,3 @@ Planned baseline implementations:
 - overlap graph selection
 - FisherRF or information-gain proxy
 - InstantSplat co-visibility proxy
-

@@ -1,0 +1,33 @@
+integration:
+  id: fastgs_local
+  type: external_repo
+  repository: https://github.com/fastgs/FastGS
+  verified_head: 44e02a5c1d5e9ed64d2ecd4af1cbba14ac92150f
+  root: external/FastGS
+  python: external/FastGS/.venv/bin/python
+  train_script: train.py
+
+inputs:
+  source_layout: colmap_or_synthetic_nerf
+  image_dir_argument: --images
+  default_image_dir: images
+  requires_colmap_sparse_model: true
+
+training:
+  command:
+    - python
+    - train.py
+    - --source_path
+    - "{source_path}"
+    - --model_path
+    - "{model_path}"
+    - --images
+    - "{image_dir}"
+    - --eval
+  default_eval_split: true
+  extra_args: []
+
+outputs:
+  model_root: fastgs_output
+  command_script: fastgs_train.sh
+  metrics_source: FastGS/3DGS evaluation outputs
