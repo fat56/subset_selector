@@ -57,7 +57,15 @@ bash scripts/run_fastgs_random_uniform_queue.sh status
 5. 写入 FastGS `results.json`，必要时同步到项目级 `metrics.json`。
 6. 汇总 scene 内 Spearman/Pearson 到 `results.md`。
 
-7. 若 PSNR/SSIM/LPIPS 与 register similarity 相关性不足，按 [metric_review.md](metric_review.md) 增补几何指标：point-cloud F-score@tau、accuracy/completeness、Chamfer-L1/L2、full-train pseudo-GT comparison，以及 VGGT-native depth/pose/point-map consistency。
+7. 若 PSNR/SSIM/LPIPS 与 register similarity 相关性不足，按 [metric_review.md](metric_review.md) 增补几何指标。当前 point-cloud proxy 可用：
+
+```bash
+PYTHONPATH=src external/FastGS/.venv/bin/python scripts/run_stage1_geometry_metrics.py \
+  --max-points 8000 \
+  --batch-size 512
+```
+
+该脚本读取 random/uniform FastGS `point_cloud/iteration_30000/point_cloud.ply`，计算 accuracy/completeness、Chamfer-L1/L2、precision/recall/F-score@tau，并输出文档 CSV 到 `docs/experiments/0001_stage1_register_quality_gate/geometry_metrics/`。当前默认 reference 包括 full-scene COLMAP sparse `points3D.ply`；若存在 full-train FastGS point cloud，也会额外加入 full reconstruction pseudo-GT comparison。
 
 ## 记录一次运行
 
@@ -82,6 +90,9 @@ PYTHONPATH=src python -m vggt_omega_selector.cli.manage record-run \
 - `register_mean_embedding.json`
 - `register_similarity/subset_register_similarity.csv`
 - `register_similarity/scene_register_correlations.csv`
+- `geometry_metrics/geometry_subset_metrics.csv`
+- `geometry_metrics/geometry_scene_correlations.csv`
+- `geometry_metrics/geometry_correlation_summary.csv`
 - FastGS `results.json` 或项目级 `metrics.json`
 - `manifest.yaml`
 - 可选：在 manifest 中记录散点图路径。

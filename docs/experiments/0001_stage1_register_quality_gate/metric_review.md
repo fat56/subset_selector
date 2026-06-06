@@ -41,6 +41,14 @@
 
 ## 当前 Stage 1 建议
 
+已执行的第一版：
+
+- 新增 [../../../scripts/run_stage1_geometry_metrics.py](../../../scripts/run_stage1_geometry_metrics.py)，从 FastGS `point_cloud/iteration_30000/point_cloud.ply` 读取 raw Gaussian centers，计算 accuracy、completeness、Chamfer-L1/L2、precision/recall/F-score@tau。
+- `colmap_sparse_full_scene` reference 覆盖 13 个 scene，使用原始 full-scene COLMAP `sparse/0/points3D.ply` 作为 sparse pseudo-GT。
+- `fastgs_full_train_images4` reference 目前只覆盖 `mipnerf360_bonsai`，使用已完成 full-train FastGS reconstruction 作为 pseudo-GT。
+- 结果见 [geometry_metrics/](geometry_metrics/)。在 13-scene COLMAP sparse proxy 上，`register_mean_cosine` 与 F-score@1%、Chamfer-L1、accuracy/completeness 的 scene 内 mean Spearman 仍接近 0，说明当前 mean-pooled register proxy 不能作为几何质量门。
+- 这个结果不否定几何指标本身；主要局限是 reference 仍是 sparse COLMAP，subset 输出使用 raw Gaussian centers，尚未使用 depth fusion / surface samples，也尚未训练 register readout。
+
 短期可执行：
 
 1. 对 13 个 scene 跑 full-train(non-test) FastGS `images_4` reconstruction，作为 pseudo-GT baseline。

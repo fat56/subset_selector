@@ -1,0 +1,91 @@
+{
+  "subset_rows": 84,
+  "scene_correlation_rows": 210,
+  "correlation_summary_rows": 30,
+  "dataset_summary_rows": 24,
+  "references": [
+    {
+      "scene_id": "db_drjohnson",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/tandt_db/db/drjohnson/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "db_playroom",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/tandt_db/db/playroom/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "mipnerf360_bicycle",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/mipnerf360/bicycle/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "mipnerf360_bonsai",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/mipnerf360/bonsai/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "mipnerf360_bonsai",
+      "reference_type": "fastgs_full_train_images4",
+      "reference_path": "/home/m/project/ltm/selector/runs/0001_stage1_register_quality_gate/fastgs_full_train/3dgsdata/mipnerf360_bonsai/full_train_images4_vfm5090_fix1_30k/model/point_cloud/iteration_30000/point_cloud.ply"
+    },
+    {
+      "scene_id": "mipnerf360_counter",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/mipnerf360/counter/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "mipnerf360_flowers",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/mipnerf360/flowers/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "mipnerf360_garden",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/mipnerf360/garden/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "mipnerf360_kitchen",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/mipnerf360/kitchen/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "mipnerf360_room",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/mipnerf360/room/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "mipnerf360_stump",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/mipnerf360/stump/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "mipnerf360_treehill",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/mipnerf360/treehill/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "tandt_train",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/tandt_db/tandt/train/sparse/0/points3D.ply"
+    },
+    {
+      "scene_id": "tandt_truck",
+      "reference_type": "colmap_sparse_full_scene",
+      "reference_path": "/home/m/project/ltm/3dgsdata/tandt_db/tandt/truck/sparse/0/points3D.ply"
+    }
+  ],
+  "max_points": 8000,
+  "tau": [
+    0.005,
+    0.01,
+    0.02
+  ],
+  "distance_backend": "torch:cuda",
+  "notes": [
+    "Distances are normalized by the reference point cloud bounding-box diagonal.",
+    "colmap_sparse_full_scene uses the original full-scene COLMAP sparse points3D.ply as pseudo-GT.",
+    "fastgs_full_train is only emitted for scenes with a completed full-train FastGS point cloud.",
+    "FastGS point clouds are raw Gaussian centers, not fused surface samples."
+  ]
+}

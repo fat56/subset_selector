@@ -136,6 +136,54 @@ PSNR 上，`mipnerf360` 和 `db` 组最高的是 `uniform`；`tandt` 组最高�
 
 质量门结论：mean-pooled register token proxy 有一定方向性，尤其 Pearson 的方向较稳定，但 Spearman 均值远低于通过建议阈值 0.5，且 best-cosine 与 best-quality 只在 4/13 个 scene 上一致。因此不能基于这个 proxy 通过 Stage 1；下一步应补训练式 readout 或更强几何 proxy，再和 feature/register k-center 等 baseline 一起复核。
 
+## 三维几何指标
+
+2026-06-06 按 [metric_review.md](metric_review.md) 补跑 point-cloud proxy。脚本：[scripts/run_stage1_geometry_metrics.py](../../../scripts/run_stage1_geometry_metrics.py)。
+
+运行命令：
+
+```bash
+PYTHONPATH=src external/FastGS/.venv/bin/python scripts/run_stage1_geometry_metrics.py \
+  --max-points 8000 \
+  --batch-size 512
+```
+
+输出：
+
+- [geometry_subset_metrics.csv](geometry_metrics/geometry_subset_metrics.csv)：每个 scene/method/reference 的 accuracy、completeness、Chamfer-L1/L2、precision/recall/F-score@tau。
+- [geometry_scene_correlations.csv](geometry_metrics/geometry_scene_correlations.csv)：每个 scene 内 6 个候选 subset 的 `register_mean_cosine` vs 几何指标相关性。
+- [geometry_correlation_summary.csv](geometry_metrics/geometry_correlation_summary.csv)：按 reference type 和 metric 聚合的 mean Spearman/Pearson、方向命中数、best-method 一致数。
+- [geometry_dataset_summary.csv](geometry_metrics/geometry_dataset_summary.csv)：仅作数据集组运行概览，不作为质量门判断。
+
+口径：
+
+- `colmap_sparse_full_scene`：使用原始 full-scene COLMAP `sparse/0/points3D.ply` 作为 sparse pseudo-GT，覆盖 13 个 scene。它不是 dense surface GT，但能先检验 subset 的 3D Gaussian centers 是否贴近全场景 SfM 几何。
+- `fastgs_full_train_images4`：使用已完成的 full-train FastGS point cloud 作为 pseudo-GT，目前只有 `mipnerf360_bonsai` 1 个 scene。
+- subset geometry 使用 FastGS `point_cloud/iteration_30000/point_cloud.ply` 的 raw Gaussian centers。每个点云用固定 seed 下采样到最多 8000 点，距离按 reference bbox 对角线归一化，F-score 阈值为 0.5%、1%、2% scene scale。
+
+`colmap_sparse_full_scene` 聚合结果如下。Lower-is-better 指标期望负相关，F-score/precision/recall 期望正相关。
+
+| Metric | Expected direction | Scenes | Mean Spearman | Spearman sign | Mean Pearson | Pearson sign | Best match |
+|---|---|---:|---:|---:|---:|---:|---:|
+| accuracy_mean_norm | negative | 13 | -0.0198 | 7/13 | -0.0683 | 9/13 | 1/13 |
+| completeness_mean_norm | negative | 13 | -0.1209 | 7/13 | -0.1464 | 9/13 | 3/13 |
+| chamfer_l1_norm | negative | 13 | -0.0418 | 8/13 | -0.1083 | 9/13 | 1/13 |
+| fscore_tau0p01 | positive | 13 | 0.0462 | 7/13 | 0.0438 | 6/13 | 1/13 |
+| precision_tau0p01 | positive | 13 | 0.0924 | 7/13 | 0.0288 | 7/13 | 2/13 |
+| recall_tau0p01 | positive | 13 | 0.1594 | 7/13 | 0.1704 | 8/13 | 3/13 |
+
+`fastgs_full_train_images4` 只覆盖 bonsai，不能作总体结论；它显示 accuracy/chamfer 和 precision/F-score 有一定方向性，但 completeness/recall 方向冲突。
+
+| Metric | Expected direction | Scenes | Spearman | Pearson | Best match |
+|---|---|---:|---:|---:|---:|
+| accuracy_mean_norm | negative | 1 | -0.4857 | -0.3258 | 1/1 |
+| chamfer_l1_norm | negative | 1 | -0.4857 | -0.1158 | 1/1 |
+| fscore_tau0p01 | positive | 1 | 0.4286 | 0.4355 | 0/1 |
+| precision_tau0p01 | positive | 1 | 0.6571 | 0.8411 | 0/1 |
+| recall_tau0p01 | positive | 1 | -0.2571 | -0.2826 | 0/1 |
+
+几何质量门结论：几何指标已经可以落地，但在 13-scene `colmap_sparse_full_scene` proxy 上，当前 `register_mean_cosine` 与 F-score、Chamfer、accuracy/completeness 的 scene 内相关性仍接近 0，best-cosine 与 best-geometry 的一致率也很低。因此，结论不是“几何指标不可用”，而是“mean-pooled register token proxy 仍不足以作为 selector 训练信号”。下一步应优先改进 proxy 本身：训练/校准 readout head，或改用 VGGT-native depth/point-map consistency，再补齐全 13 scene 的 full-train FastGS pseudo-GT 或 fused-depth/surface samples。
+
 ## 观察
 
 - `stage1-prepare` 现在会把选中的 train images 和 llffhold held-out test images 一起物化到每个 FastGS source，并写入 split metadata。
@@ -148,3 +196,4 @@ PSNR 上，`mipnerf360` 和 `db` 组最高的是 `uniform`；`tandt` 组最高�
 - fix1 重编译后，bonsai full source、`random_ratio_seed000` 20% source、`uniform_stride_ratio` 20% source 均完成 30k 训练、test render 和 metrics 评估。
 - FastGS 原生 COLMAP `--eval` 会对当前 source 内全部图片重新按 llffhold 切分；对 Stage 1 prepared source 这会把部分 held-out 图片混回训练集。已在 FastGS `scene/dataset_readers.py` 中加入 `stage1_split.json` 优先逻辑，并重跑 random/uniform 两条 20% sanity run。
 - random/uniform `images_4` 30k 矩阵稳定完成；mean-pooled register-token similarity 已补齐，但不足以通过质量门，当前 blocker 转为训练/校准 readout 或更换几何 proxy，并补齐 feature/register k-center。
+- point-cloud 几何 proxy 已补跑：COLMAP sparse reference 覆盖 13 个 scene，bonsai 另有 full FastGS reference。几何指标本身可执行，但当前 mean-pooled register cosine 对几何排序仍不稳定。
