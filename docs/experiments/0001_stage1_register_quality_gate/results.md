@@ -91,6 +91,8 @@ PSNR 上，`mipnerf360` 和 `db` 组最高的是 `uniform`；`tandt` 组最高�
 
 本轮只评估一个透明 proxy：`register_mean_cosine`。具体做法是对 VGGT-OMEGA `register_tokens` 在 batch、frame、register 维度做 mean pooling，得到一个 scene/subset 向量；每个 subset 与同 scene 的 full-train(non-test) reference 向量计算 cosine。它不是训练后的 readout head。
 
+指标复盘见 [metric_review.md](metric_review.md)。核心结论是：PSNR/SSIM/LPIPS 对 appearance fidelity 有价值，但不是 register token 的最佳目标；后续质量门应优先加入 point-cloud F-score、accuracy/completeness、Chamfer-L1/L2，以及 full-train pseudo-GT 或 VGGT-native depth/pose/point-map consistency。
+
 输入口径：
 
 - full reference：每个 scene 的 full image set 先按 full-scene llffhold 排除 test，再把剩余 train candidates 输入 VGGT-OMEGA。

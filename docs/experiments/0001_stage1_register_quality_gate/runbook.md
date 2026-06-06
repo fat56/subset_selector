@@ -57,6 +57,8 @@ bash scripts/run_fastgs_random_uniform_queue.sh status
 5. 写入 FastGS `results.json`，必要时同步到项目级 `metrics.json`。
 6. 汇总 scene 内 Spearman/Pearson 到 `results.md`。
 
+7. 若 PSNR/SSIM/LPIPS 与 register similarity 相关性不足，按 [metric_review.md](metric_review.md) 增补几何指标：point-cloud F-score@tau、accuracy/completeness、Chamfer-L1/L2、full-train pseudo-GT comparison，以及 VGGT-native depth/pose/point-map consistency。
+
 ## 记录一次运行
 
 ```bash

@@ -9,6 +9,7 @@
 - 运行台账：[docs/registry/run_ledger.csv](../../registry/run_ledger.csv)
 - 指标 schema：[docs/registry/metrics_schema.md](../../registry/metrics_schema.md)
 - 当前结果记录：[results.md](results.md)
+- 指标复盘：[metric_review.md](metric_review.md)
 - FastGS rasterizer fix1 重编译日志：`runs/0001_stage1_register_quality_gate/fastgs_full_train/3dgsdata/mipnerf360_bonsai/rebuild_diff_gaussian_fix1.log`
 - 已完成 30k sanity runs：bonsai full source、bonsai `random_ratio_seed000` 20%、bonsai `uniform_stride_ratio` 20%。
 - 已完成 random/uniform `images_4` 30k 矩阵：78/78 done，0 failed，覆盖 13 个 scene x 5 random seed 以及 13 个 uniform stride run。
@@ -24,5 +25,6 @@
 - 保持 FastGS COLMAP reader 的 `stage1_split.json` 支持；prepared run 的正式指标必须使用该 split 口径。
 - 不基于 mean-pooled register-token proxy 进入 Stage 2 selector 训练。
 - 训练或校准一个 readout head，或改用更强几何 proxy 后，重新计算 scene 内相似度与 FastGS PSNR/SSIM/LPIPS 的关系。
+- 优先补几何质量指标：full-train pseudo-GT 下的 F-score@tau、accuracy/completeness、Chamfer-L1/L2，以及 VGGT-native depth/pose/point-map consistency。
 - 生成或登记 feature/register per-image feature JSON 后，再启用 `feature_k_center` 和 `register_k_center`。
 - 基于完整相关性、散点图和失败样本，再更新本复盘结论。
