@@ -186,9 +186,113 @@ Decision:
 
 Do not promote the attention readout as the locked `0004` selector objective. Keep mean-pooled register cosine as the selector fallback. The next readout improvement should prioritize more/diverse hard labels or target audit rather than another small head tweak.
 
+## Run: `hardlabel100_attention_multimetric_ratio20_margin`
+
+- Status: completed.
+- Train labels: reuse `hardlabel100_pooled_mlp_full100_80/hardlabel_train_labels.csv`.
+- VGGT cache: reused; no new VGGT cache generation.
+- Model: same cross-attention multi-metric readout as `hardlabel100_attention_multimetric`.
+- Training filter: only methods containing `20`.
+- Pair filter: same-scene metric margin at least `0.25` of that scene/metric range.
+- Label rows after filter: 700 rows from 100 scenes.
+- Training pairs after filter: 3,255 metric pairs.
+- Train devices: `cuda:0,cuda:1`
+- Epochs: 30
+- Steps: 6,090
+- Training time: 682.7 seconds
+- Run dir: `runs/0003_stage2_readout_calibration/hardlabel100_attention_multimetric_ratio20_margin/`
+
+This run tests whether the previous attention result was hurt by mixing 20/50/80/100% subsets while LTM30 validation is 20%-subset only, and by noisy near-tie pseudo-label pairs.
+
+Validation summary:
+
+| Method | pose rotation rho | point-map RMSE rho | depth log RMSE rho | Mean rho | Expected alignment |
+|---|---:|---:|---:|---:|---:|
+| mean-pooled register baseline | -0.5429 | -0.5181 | -0.4990 | -0.5200 | 0.5200 |
+| attention metric-head best | -0.5295 | -0.5505 | -0.6171 | -0.5657 | 0.5657 |
+| ratio20/margin metric-head best | -0.3676 | -0.3581 | -0.4324 | -0.3860 | 0.3860 |
+| ratio20/margin metric-head final | -0.3295 | -0.2895 | -0.3543 | -0.3244 | 0.3244 |
+| ratio20/margin embedding diagnostic peak | -0.5410 | -0.5886 | -0.5981 | -0.5759 | 0.5759 |
+| ratio20/margin embedding diagnostic final | -0.5619 | -0.5695 | -0.5600 | -0.5638 | 0.5638 |
+
+Best metric-head checkpoint:
+
+- checkpoint: `runs/0003_stage2_readout_calibration/hardlabel100_attention_multimetric_ratio20_margin/best.pt`
+- epoch: 7
+- primary metric-head expected alignment: 0.3860
+- embedding-cosine diagnostic at this checkpoint: 0.5422
+
+Embedding diagnostic note:
+
+- The best embedding diagnostic occurred at epoch 16 with expected alignment `0.5759`.
+- The training loop selected checkpoints by metric-head alignment, so the epoch-16 embedding-best model was not retained as `best.pt`.
+- This diagnostic is still useful as evidence about objective/checkpoint selection, but it is not a promotable checkpoint artifact.
+
+Interpretation:
+
+- The ratio-20/margin filtering is a clear negative result for the metric heads: `0.3860` is far below both the mean-pooled baseline `0.5200` and prior attention best `0.5657`.
+- The embedding diagnostic remains competitive and slightly exceeds prior attention head best at its peak, but that signal is not what the current primary objective selects.
+- The result suggests the bottleneck is not simply subset-ratio mismatch or near-tie pair noise. The multi-metric head objective itself may be too brittle on the narrowed 20%-only label set.
+- Do not start a larger 20%-only multi-metric run. The next useful ablation is either single-target training or changing checkpoint selection/objective to preserve embedding-best models.
+
+Decision:
+
+Do not promote this checkpoint. Treat the run as evidence against 20%-only multi-metric head training with a `0.25` margin filter. If continuing locally, prefer a short single-target ablation starting with `depth_log_rmse` or a rerun that checkpoints by embedding expected alignment.
+
+## Run: `hardlabel100_attention_depth_ratio20_margin`
+
+- Status: completed.
+- Train labels: reuse `hardlabel100_pooled_mlp_full100_80/hardlabel_train_labels.csv`.
+- VGGT cache: reused; no new VGGT cache generation.
+- Model: cross-attention readout with one metric head.
+- Target metric: `depth_log_rmse`.
+- Training filter: only methods containing `20`.
+- Pair filter: same-scene metric margin at least `0.25` of the depth metric range.
+- Label rows after filter: 700 rows from 100 scenes.
+- Training pairs after filter: 1,131 depth pairs.
+- Train devices: `cuda:0,cuda:1`
+- Epochs: 30
+- Steps: 2,100
+- Training time: 252.8 seconds
+- Run dir: `runs/0003_stage2_readout_calibration/hardlabel100_attention_depth_ratio20_margin/`
+
+This run tests whether the ratio20/margin regression was caused by multi-target head interference.
+
+Validation summary:
+
+| Method | depth log RMSE rho | Expected alignment |
+|---|---:|---:|
+| mean-pooled register baseline | -0.4990 | 0.4990 |
+| attention metric-head best, all metrics | -0.6171 | 0.6171 |
+| ratio20/margin metric-head best, all metrics | -0.4324 | 0.4324 |
+| ratio20/margin depth-only head best | -0.4248 | 0.4248 |
+| ratio20/margin depth-only head final | -0.3010 | 0.3010 |
+| ratio20/margin depth-only embedding diagnostic peak | -0.5543 | 0.5543 |
+| ratio20/margin depth-only embedding diagnostic final | -0.5048 | 0.5048 |
+
+Best checkpoint:
+
+- checkpoint: `runs/0003_stage2_readout_calibration/hardlabel100_attention_depth_ratio20_margin/best.pt`
+- epoch: 20
+- depth-head expected alignment: 0.4248
+- embedding diagnostic at this checkpoint: 0.5124
+
+Interpretation:
+
+- Depth-only training did not rescue the ratio20/margin metric-head setup; its best depth correlation is slightly worse than the multi-metric ratio20/margin depth head.
+- The prior all-ratio attention model remains much better on depth (`0.6171` expected alignment), so removing higher-ratio subsets likely removed useful supervision rather than just cleaning noise.
+- The embedding diagnostic remains stronger than the metric head, but still below the all-ratio attention depth head.
+- Do not spend more time on pose-only/point-only under this exact 20%-only/margin recipe. The next useful change should alter the objective/checkpointing or return to all-ratio labels with single-target heads.
+
+Decision:
+
+Do not promote. Stop the current 20%-only/margin branch after this depth-only check.
+
 ## Decision Log
 
 - 2026-06-07: Created design after LTM30 showed strong VGGT-native subset-vs-full signal but Stage 1 appearance/sparse-geometry proxies remained insufficient.
 - 2026-06-07: Ran `train500_pooled_mlp_full16`; stable but does not pass the readout-improvement gate.
 - 2026-06-07: Ran `hardlabel100_pooled_mlp_full100_80`; hard native labels improve the pooled readout materially over the warmup, but still do not pass the strict `+0.10` gate.
 - 2026-06-07: Ran `hardlabel100_attention_multimetric`; attention and separate metric heads slightly improve best alignment to `0.5657`, still below the strict promotion gate.
+- 2026-06-07: Ran `hardlabel100_attention_multimetric_ratio20_margin`; metric-head alignment regressed to `0.3860`, while embedding diagnostics peaked at `0.5759` without a retained embedding-best checkpoint.
+- 2026-06-07: Ran `hardlabel100_attention_depth_ratio20_margin`; depth-only head still underperformed (`0.4248`), so the 20%-only/margin branch is not worth expanding as-is.

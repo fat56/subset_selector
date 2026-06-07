@@ -116,6 +116,55 @@ Primary evaluation is metric-head LTM30 expected alignment. Embedding-cosine exp
 
 Completed result: best metric-head expected alignment reached `0.5657` at epoch 25, which is slightly above pooled hard-label readout `0.5594` but below the strict promotion gate.
 
+## Ratio-20 / Large-Margin Attention Ablation
+
+Reuse the completed `hardlabel100` cache and labels, but train only on 20% subset rows and remove near-tie metric pairs.
+
+Target command:
+
+```bash
+tmux new -s readout0003_ratio20_margin
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_attention_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel100_pooled_mlp_full100_80/hardlabel_train_labels.csv \
+  --run-dir runs/0003_stage2_readout_calibration/hardlabel100_attention_multimetric_ratio20_margin \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 30 \
+  --batch-size 16 \
+  --pairs-per-scene-metric 24 \
+  --method-contains 20 \
+  --min-metric-margin-fraction 0.25 \
+  --num-workers 4
+```
+
+Expected pair summary before training:
+
+- label rows: `700` from 100 scenes.
+- total metric pairs: `3,255`.
+- pair counts: pose rotation `1,016`, point-map RMSE `1,108`, depth log RMSE `1,131`.
+
+Completed result:
+
+- Best metric-head expected alignment: `0.3860` at epoch 7.
+- Final metric-head expected alignment: `0.3244`.
+- Best embedding diagnostic expected alignment: `0.5759` at epoch 16, not retained as `best.pt` because checkpointing follows metric-head score.
+- Decision: do not promote; use this as a negative multi-metric 20%-only/margin ablation.
+
+Single-target ablations can reuse the same command with one metric:
+
+```bash
+--metrics pose_rotation_mean_deg
+--metrics pointmap_rmse_norm
+--metrics depth_log_rmse
+```
+
+Depth-only completed result:
+
+- Run dir: `runs/0003_stage2_readout_calibration/hardlabel100_attention_depth_ratio20_margin/`
+- Best depth-head expected alignment: `0.4248` at epoch 20.
+- Final depth-head expected alignment: `0.3010`.
+- Best embedding diagnostic expected alignment: `0.5543`.
+- Decision: do not continue pose-only/point-only under this exact 20%-only/margin setup.
+
 ```bash
 tmux new -s readout0003_hardlabel100
 /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_hardlabel_training.py \

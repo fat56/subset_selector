@@ -4,7 +4,7 @@
 
 - Experiment ID: `0003_stage2_readout_calibration`
 - Stage: `stage2`
-- Status: attention follow-up completed; readout not promoted yet
+- Status: ratio-20 margin follow-up completed; readout not promoted yet
 - Created: 2026-06-07
 - Config: implemented with `hardlabel100_full100_80`
 - Depends on: `0001_stage1_register_quality_gate`, `0002_ltm30_pose_depth_validation`
@@ -78,6 +78,19 @@ camera/register tokens
 - 若 pose head 仍弱而 point/depth head 强，说明 pose signal 需要独立 selector/readout 或单独 pose-target calibration。
 
 Result: attention follow-up best checkpoint reached `0.5657` metric-head expected alignment. It improves over pooled MLP by only `+0.0063`, so the bottleneck is not just pooled summarization. The readout still fails the strict promotion gate.
+
+### Ratio-20 / Large-Margin Follow-Up
+
+The next low-cost ablation reuses the same `hardlabel100_full100_80` cache and labels, but changes the training distribution to better match LTM30 validation:
+
+- Keep only 20% subset methods: `random20_*`, `uniform20`, and `contiguous20_*`.
+- Keep only same-scene pair candidates whose metric margin is at least `0.25` of that scene's metric range.
+- Preserve the cross-attention multi-metric architecture and LTM30 evaluation protocol.
+- Expose the same CLI for single-target ablations by passing one metric through `--metrics`.
+
+This tests whether the previous readout was diluted by mixed subset ratios and noisy near-tie pairs. The filtered training set contains 700 label rows and 3,255 pairwise metric examples across 100 scenes.
+
+Result: the metric-head objective regressed sharply, with best expected alignment `0.3860`. The embedding diagnostic peaked at `0.5759`, but the current loop checkpoints by metric-head score, so no embedding-best checkpoint was retained. A depth-only single-target check also underperformed, with best depth-head expected alignment `0.4248`. The immediate conclusion is that 20%-only/margin filtering is not sufficient and may remove useful all-ratio supervision; future ablations should revise objective/checkpoint selection or return to all-ratio labels with single-target heads.
 
 ### External GT Caveat
 

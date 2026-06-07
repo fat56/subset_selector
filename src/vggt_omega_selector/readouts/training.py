@@ -7,6 +7,7 @@ import json
 import math
 import random
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,8 @@ class HardLabelTrainConfig:
     weight_decay: float = 1e-4
     num_workers: int = 2
     pairs_per_scene: int = 48
+    method_filters: tuple[str, ...] = ()
+    min_target_margin_fraction: float = 0.0
     hidden_dim: int = 512
     output_dim: int = 256
     dropout: float = 0.1
@@ -86,6 +89,8 @@ class AttentionHardLabelTrainConfig:
     num_workers: int = 4
     pairs_per_scene_metric: int = 24
     metrics: tuple[str, ...] = PRIMARY_VAL_METRICS
+    method_filters: tuple[str, ...] = ()
+    min_metric_margin_fraction: float = 0.0
     hidden_dim: int = 512
     output_dim: int = 256
     num_layers: int = 2
@@ -130,20 +135,31 @@ def collate_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 class HardLabelPairDataset(Dataset[dict[str, Any]]):
-    def __init__(self, labels_csv: Path, pairs_per_scene: int, seed: int) -> None:
-        rows = read_csv(labels_csv)
+    def __init__(
+        self,
+        labels_csv: Path,
+        pairs_per_scene: int,
+        seed: int,
+        method_filters: tuple[str, ...] = (),
+        min_target_margin_fraction: float = 0.0,
+    ) -> None:
+        all_rows = read_csv(labels_csv)
+        rows = filter_rows_by_method(all_rows, method_filters)
         grouped: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             grouped.setdefault(row["scene_id"], []).append(row)
         pairs: list[dict[str, Any]] = []
         rng = random.Random(seed)
+        pair_count_by_scene: Counter[str] = Counter()
         for scene_id, scene_rows in sorted(grouped.items()):
             ordered = sorted(scene_rows, key=lambda row: float(row["target_error"]))
+            target_values = [float(row["target_error"]) for row in ordered]
+            min_margin = metric_margin_threshold(target_values, min_target_margin_fraction)
             candidates = []
             for good_index, good in enumerate(ordered):
                 for bad in ordered[good_index + 1 :]:
                     margin = float(bad["target_error"]) - float(good["target_error"])
-                    if margin > 1e-6:
+                    if margin >= min_margin:
                         candidates.append((margin, good, bad))
             candidates.sort(key=lambda item: item[0], reverse=True)
             if len(candidates) > pairs_per_scene:
@@ -167,9 +183,25 @@ class HardLabelPairDataset(Dataset[dict[str, Any]]):
                         "target_margin": float(margin),
                     }
                 )
+                pair_count_by_scene[scene_id] += 1
         if not pairs:
             raise ValueError(f"No training pairs built from {labels_csv}")
         self.pairs = pairs
+        self.summary = {
+            "labels_csv": str(labels_csv),
+            "total_label_rows": len(all_rows),
+            "filtered_label_rows": len(rows),
+            "total_scenes": len({row["scene_id"] for row in all_rows}),
+            "filtered_scenes": len(grouped),
+            "scenes_with_pairs": len(pair_count_by_scene),
+            "pairs": len(pairs),
+            "pairs_per_scene_requested": pairs_per_scene,
+            "method_filters": list(method_filters),
+            "min_target_margin_fraction": min_target_margin_fraction,
+            "rows_by_method": dict(sorted(Counter(row["method"] for row in rows).items())),
+            "pairs_by_scene_min": min(pair_count_by_scene.values()) if pair_count_by_scene else 0,
+            "pairs_by_scene_max": max(pair_count_by_scene.values()) if pair_count_by_scene else 0,
+        }
 
     def __len__(self) -> int:
         return len(self.pairs)
@@ -191,21 +223,28 @@ class MultiMetricHardLabelPairDataset(Dataset[dict[str, Any]]):
         metrics: tuple[str, ...],
         pairs_per_scene_metric: int,
         seed: int,
+        method_filters: tuple[str, ...] = (),
+        min_metric_margin_fraction: float = 0.0,
     ) -> None:
-        rows = read_csv(labels_csv)
+        all_rows = read_csv(labels_csv)
+        rows = filter_rows_by_method(all_rows, method_filters)
         grouped: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             grouped.setdefault(row["scene_id"], []).append(row)
         pairs: list[dict[str, Any]] = []
         rng = random.Random(seed)
+        pair_count_by_metric: Counter[str] = Counter()
+        pair_count_by_scene_metric: Counter[str] = Counter()
         for scene_id, scene_rows in sorted(grouped.items()):
             for metric_index, metric in enumerate(metrics):
                 ordered = sorted(scene_rows, key=lambda row: float(row[metric]))
+                metric_values = [float(row[metric]) for row in ordered]
+                min_margin = metric_margin_threshold(metric_values, min_metric_margin_fraction)
                 candidates = []
                 for good_index, good in enumerate(ordered):
                     for bad in ordered[good_index + 1 :]:
                         margin = float(bad[metric]) - float(good[metric])
-                        if margin > 1e-8:
+                        if margin >= min_margin:
                             candidates.append((margin, good, bad))
                 candidates.sort(key=lambda item: item[0], reverse=True)
                 if len(candidates) > pairs_per_scene_metric:
@@ -229,9 +268,32 @@ class MultiMetricHardLabelPairDataset(Dataset[dict[str, Any]]):
                             "metric_margin": float(margin),
                         }
                     )
+                    pair_count_by_metric[metric] += 1
+                    pair_count_by_scene_metric[f"{scene_id}/{metric}"] += 1
         if not pairs:
             raise ValueError(f"No multi-metric training pairs built from {labels_csv}")
         self.pairs = pairs
+        self.summary = {
+            "labels_csv": str(labels_csv),
+            "total_label_rows": len(all_rows),
+            "filtered_label_rows": len(rows),
+            "total_scenes": len({row["scene_id"] for row in all_rows}),
+            "filtered_scenes": len(grouped),
+            "scene_metric_groups_with_pairs": len(pair_count_by_scene_metric),
+            "pairs": len(pairs),
+            "pairs_per_scene_metric_requested": pairs_per_scene_metric,
+            "metrics": list(metrics),
+            "method_filters": list(method_filters),
+            "min_metric_margin_fraction": min_metric_margin_fraction,
+            "rows_by_method": dict(sorted(Counter(row["method"] for row in rows).items())),
+            "pairs_by_metric": dict(sorted(pair_count_by_metric.items())),
+            "pairs_by_scene_metric_min": (
+                min(pair_count_by_scene_metric.values()) if pair_count_by_scene_metric else 0
+            ),
+            "pairs_by_scene_metric_max": (
+                max(pair_count_by_scene_metric.values()) if pair_count_by_scene_metric else 0
+            ),
+        }
 
     def __len__(self) -> int:
         return len(self.pairs)
@@ -409,7 +471,14 @@ def train_hardlabel_readout(config: HardLabelTrainConfig) -> dict[str, Any]:
     random.seed(config.seed)
     torch.manual_seed(config.seed)
 
-    dataset = HardLabelPairDataset(config.labels_csv, config.pairs_per_scene, config.seed)
+    dataset = HardLabelPairDataset(
+        labels_csv=config.labels_csv,
+        pairs_per_scene=config.pairs_per_scene,
+        seed=config.seed,
+        method_filters=config.method_filters,
+        min_target_margin_fraction=config.min_target_margin_fraction,
+    )
+    (config.run_dir / "pair_summary.json").write_text(json.dumps(dataset.summary, indent=2) + "\n", encoding="utf-8")
     generator = torch.Generator()
     generator.manual_seed(config.seed)
     loader = DataLoader(
@@ -539,7 +608,10 @@ def train_attention_multimetric_readout(config: AttentionHardLabelTrainConfig) -
         metrics=config.metrics,
         pairs_per_scene_metric=config.pairs_per_scene_metric,
         seed=config.seed,
+        method_filters=config.method_filters,
+        min_metric_margin_fraction=config.min_metric_margin_fraction,
     )
+    (config.run_dir / "pair_summary.json").write_text(json.dumps(dataset.summary, indent=2) + "\n", encoding="utf-8")
     generator = torch.Generator()
     generator.manual_seed(config.seed)
     loader = DataLoader(
@@ -864,6 +936,22 @@ def read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def filter_rows_by_method(rows: list[dict[str, str]], method_filters: tuple[str, ...]) -> list[dict[str, str]]:
+    filters = tuple(item for item in method_filters if item)
+    if not filters:
+        return rows
+    return [row for row in rows if any(item in row["method"] for item in filters)]
+
+
+def metric_margin_threshold(values: list[float], min_margin_fraction: float) -> float:
+    if not values:
+        return float("inf")
+    spread = max(values) - min(values)
+    if min_margin_fraction <= 0.0 or spread <= 0.0:
+        return 1e-8
+    return max(1e-8, min_margin_fraction * spread)
+
+
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
@@ -945,6 +1033,8 @@ def save_hardlabel_checkpoint(
             "output_dim": config.output_dim,
             "dropout": config.dropout,
             "devices": list(config.devices),
+            "method_filters": list(config.method_filters),
+            "min_target_margin_fraction": config.min_target_margin_fraction,
             "target": "hard_native_label_pairwise_ranking",
         },
         "epoch": epoch,
@@ -974,6 +1064,8 @@ def save_attention_checkpoint(
             "dropout": config.dropout,
             "metrics": list(config.metrics),
             "devices": list(config.devices),
+            "method_filters": list(config.method_filters),
+            "min_metric_margin_fraction": config.min_metric_margin_fraction,
             "target": "hard_native_label_metric_head_pairwise_ranking",
         },
         "epoch": epoch,

@@ -43,7 +43,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--num-layers", type=int, default=2)
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument(
+        "--method-contains",
+        action="append",
+        default=[],
+        help="Keep only training-label rows whose method contains this substring; repeatable.",
+    )
+    parser.add_argument(
+        "--min-metric-margin-fraction",
+        type=float,
+        default=0.0,
+        help="Keep pair candidates whose metric margin is at least this fraction of the scene metric range.",
+    )
+    parser.add_argument(
+        "--metrics",
+        default=",".join(PRIMARY_VAL_METRICS),
+        help="Comma-separated metric list. Use one metric for single-target ablations.",
+    )
     args = parser.parse_args(argv)
+    metrics = tuple(metric.strip() for metric in args.metrics.split(",") if metric.strip())
+    if not metrics:
+        raise ValueError("--metrics must include at least one metric")
 
     config = AttentionHardLabelTrainConfig(
         labels_csv=resolve(args.labels_csv),
@@ -58,7 +78,9 @@ def main(argv: list[str] | None = None) -> int:
         lr=args.lr,
         num_workers=args.num_workers,
         pairs_per_scene_metric=args.pairs_per_scene_metric,
-        metrics=PRIMARY_VAL_METRICS,
+        metrics=metrics,
+        method_filters=tuple(args.method_contains),
+        min_metric_margin_fraction=args.min_metric_margin_fraction,
         hidden_dim=args.hidden_dim,
         output_dim=args.output_dim,
         num_layers=args.num_layers,
@@ -77,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
                 "num_workers": config.num_workers,
                 "pairs_per_scene_metric": config.pairs_per_scene_metric,
                 "metrics": list(config.metrics),
+                "method_filters": list(config.method_filters),
+                "min_metric_margin_fraction": config.min_metric_margin_fraction,
                 "hidden_dim": config.hidden_dim,
                 "output_dim": config.output_dim,
                 "num_layers": config.num_layers,
