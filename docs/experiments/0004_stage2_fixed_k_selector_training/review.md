@@ -6,8 +6,8 @@ Pending design review.
 
 ## Evidence Needed
 
-- Stage 1 gate acceptance with concrete date and metrics。
-- Readout head choice: frozen checkpoint path or calibration plan。
+- Stage 2.0 readout/proxy decision from `0003_stage2_readout_calibration`。
+- Readout head choice: frozen checkpoint path or explicit mean-pooling fallback。
 - Final selector input feature list。
 - Final fixed `K` or ratio for first training run。
 - Hard validation results versus Stage 1 baselines。
@@ -19,6 +19,6 @@ Adopt the soft-token proxy plus hard-subset validation plan for the first implem
 
 ## Next Actions
 
-- Wait for Stage 1 GPU validation and review decision。
-- Decide whether Stage 1 produced a locked readout or Stage 2 needs readout calibration。
+- Wait for `0003_stage2_readout_calibration` decision。
+- Import frozen readout checkpoint or mean-pooling fallback from `0003`。
 - If accepted, create the Stage 2 config and minimal cache/train/eval implementation。

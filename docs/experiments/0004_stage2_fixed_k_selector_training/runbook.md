@@ -2,11 +2,11 @@
 
 ## Preconditions
 
-- `0001_stage1_register_quality_gate` 已通过 review，且有明确采用的 register/readout embedding。
+- `0003_stage2_readout_calibration` 已明确采用 frozen readout checkpoint 或 mean-pooling baseline objective。
 - VGGT-OMEGA checkpoint、FastGS/3DGS backend、dataset registry 均已可用。
 - 每个 scene 按 train/val/test 做场景级划分，同一 scene 不跨 split。
 - full scene 的 VGGT-OMEGA camera/register token cache 已准备好，或已有生成计划。
-- 本实验设计已被接受后，才创建 `configs/experiments/0003_stage2_fixed_k_selector_training.yaml` 和对应 `src` 实现。
+- 本实验设计已被接受后，才创建 `configs/experiments/0004_stage2_fixed_k_selector_training.yaml` 和对应 `src` 实现。
 
 ## Planned Flow
 
@@ -14,7 +14,7 @@
 
    - 确认第一版 `K`：推荐沿用 Stage 1 的 `20%` ratio。
    - 确认 selector 输入：推荐使用 cached VGGT camera/register summaries。
-   - 确认 readout 状态：优先使用 Stage 1 已验证并锁定的 readout。
+   - 确认 readout 状态：使用 `0003` 选定并冻结的 readout；如果 `0003` 未通过，则使用 mean pooling baseline objective。
 
 1. Build caches.
 
@@ -23,9 +23,9 @@
    - per-image `register_mean_i` and `register_max_i`。
    - optional DINO/CLIP/image-quality/pose/overlap features。
 
-2. Optional readout calibration.
+2. Import readout/proxy decision.
 
-   仅当 Stage 1 没有锁定 readout 时执行。训练 readout 后冻结，并记录 checkpoint path。
+   从 `0003_stage2_readout_calibration` 导入 frozen readout checkpoint、validation summary、或 mean-pooling fallback decision。本实验不重新训练 readout。
 
 3. Train soft-token selector.
 
@@ -58,30 +58,30 @@
 
 ```bash
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage2-cache \
-  --config configs/experiments/0003_stage2_fixed_k_selector_training.yaml \
+  --config configs/experiments/0004_stage2_fixed_k_selector_training.yaml \
   --dataset <dataset_or_scene_set>
 ```
 
 ```bash
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage2-train \
-  --config configs/experiments/0003_stage2_fixed_k_selector_training.yaml \
+  --config configs/experiments/0004_stage2_fixed_k_selector_training.yaml \
   --dataset <dataset_or_scene_set>
 ```
 
 ```bash
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage2-eval-hard \
-  --config configs/experiments/0003_stage2_fixed_k_selector_training.yaml \
+  --config configs/experiments/0004_stage2_fixed_k_selector_training.yaml \
   --checkpoint <selector_checkpoint> \
   --dataset <dataset_or_scene_set>
 ```
 
 ```bash
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage record-run \
-  --experiment 0003_stage2_fixed_k_selector_training \
+  --experiment 0004_stage2_fixed_k_selector_training \
   --stage stage2 \
   --method learned_fixed_k_selector \
   --dataset <dataset_or_scene_set> \
-  --config configs/experiments/0003_stage2_fixed_k_selector_training.yaml \
+  --config configs/experiments/0004_stage2_fixed_k_selector_training.yaml \
   --notes "fixed K selector hard validation"
 ```
 

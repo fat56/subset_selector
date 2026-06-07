@@ -2,20 +2,20 @@
 
 ## Metadata
 
-- Experiment ID: `0003_stage2_fixed_k_selector_training`
+- Experiment ID: `0004_stage2_fixed_k_selector_training`
 - Stage: `stage2`
 - Status: design-draft
 - Created: 2026-06-05
 - Config: not created yet. Create only after this design is accepted.
-- Depends on: `0001_stage1_register_quality_gate`
+- Depends on: `0001_stage1_register_quality_gate`, `0002_ltm30_pose_depth_validation`, `0003_stage2_readout_calibration`
 
 ## Question
 
-在 Stage 1 证明 register/readout embedding similarity 与 FastGS/3DGS 质量显著相关之后，能否训练一个固定预算 selector，在相同 `K` 或相同 ratio 下稳定选出比 random、uniform、feature k-center、register k-center 更好的图像子集？
+在 `0003_stage2_readout_calibration` 明确采用 mean pooling 或 frozen readout 之后，能否训练一个固定预算 selector，在相同 `K` 或相同 ratio 下稳定选出比 random、uniform、feature k-center、register k-center 更好的图像子集？
 
 ## Hypothesis
 
-如果 VGGT-OMEGA register/readout embedding 是有效的场景级几何 proxy，那么一个带上下文建模的 set selector 可以从每帧特征中学习到 coverage、overlap、清晰度和视角互补性，并在固定 `K` 下得到比手工规则更高的 hard-subset register similarity 与 FastGS 重建质量。
+如果 VGGT-OMEGA register/readout embedding 是有效的场景级几何 proxy，那么一个带上下文建模的 set selector 可以从每帧特征中学习到 coverage、overlap、清晰度和视角互补性，并在固定 `K` 下得到比手工规则更高的 hard-subset VGGT-native consistency 与后续 FastGS 重建质量。
 
 ## Scope
 
@@ -48,7 +48,7 @@ topK(s_i)
     -> z_hard for validation
 ```
 
-关键建议：第一版把 VGGT-OMEGA 冻结，把 Stage 1 通过 gate 的 readout head 也冻结。如果 Stage 1 还没有一个已锁定的 readout head，先补一个 `Stage 2.0 readout calibration`，用 full scene 和 dense subset augmentation 训练 readout，再冻结它训练 selector。不要一开始让 readout 和 selector 同时自由漂移，否则 `z_full` 目标会变动，正样本 cosine loss 容易失去约束力。
+关键建议：第一版把 VGGT-OMEGA 冻结，把 `0003_stage2_readout_calibration` 选定的 readout 或 mean-pooling objective 也冻结。不要一开始让 readout 和 selector 同时自由漂移，否则 `z_full` 目标会变动，正样本 cosine loss 容易失去约束力。
 
 ### Per-Image Feature
 
