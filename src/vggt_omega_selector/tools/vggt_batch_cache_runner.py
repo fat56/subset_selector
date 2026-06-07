@@ -67,12 +67,19 @@ def main(argv: list[str] | None = None) -> int:
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.json"
         embedding_path = output_dir / "register_mean_embedding.json"
-        if (
-            not args.force
-            and manifest_path.exists()
-            and (output_dir / "register_tokens.pt").exists()
-            and embedding_path.exists()
-        ):
+        required_outputs = [output_dir / "register_tokens.pt", embedding_path]
+        if args.include_pose:
+            required_outputs.append(output_dir / "pose_enc.pt")
+        if args.include_depth:
+            required_outputs.extend([output_dir / "depth.pt", output_dir / "depth_conf.pt"])
+        if args.enable_alignment:
+            required_outputs.extend(
+                [output_dir / "text_alignment_embedding.pt", output_dir / "text_alignment_token.pt"]
+            )
+        if args.include_images:
+            required_outputs.append(output_dir / "images.pt")
+
+        if not args.force and manifest_path.exists() and all(path.exists() for path in required_outputs):
             statuses.append({"id": job_id, "status": "skipped", "output_dir": str(output_dir)})
             continue
 

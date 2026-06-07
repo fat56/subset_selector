@@ -67,6 +67,18 @@ PYTHONPATH=src external/FastGS/.venv/bin/python scripts/run_stage1_geometry_metr
 
 该脚本读取 random/uniform FastGS `point_cloud/iteration_30000/point_cloud.ply`，计算 accuracy/completeness、Chamfer-L1/L2、precision/recall/F-score@tau，并输出文档 CSV 到 `docs/experiments/0001_stage1_register_quality_gate/geometry_metrics/`。当前默认 reference 包括 full-scene COLMAP sparse `points3D.ply`；若存在 full-train FastGS point cloud，也会额外加入 full reconstruction pseudo-GT comparison。
 
+8. 比较 VGGT-native depth / pose / derived point-map consistency：
+
+```bash
+PYTHONPATH=src:/home/m/project/ltm/vggt-omega \
+  /home/m/project/ltm/vggt-omega/.venv/bin/python \
+  scripts/run_stage1_vggt_native_consistency.py \
+  --max-pixels-per-image 1024 \
+  --max-pointmap-points 60000
+```
+
+该脚本会为 13 个 full-train(non-test) reference 和 78 个 random/uniform subset 补 VGGT-OMEGA `--include-depth --include-pose` cache，然后按同名 image 比较 subset 与 full reference 的 depth、pose 和由 depth+pose 派生的 point-map consistency。文档 CSV 输出到 `docs/experiments/0001_stage1_register_quality_gate/vggt_native_geometry/`。
+
 ## 记录一次运行
 
 ```bash
@@ -93,6 +105,9 @@ PYTHONPATH=src python -m vggt_omega_selector.cli.manage record-run \
 - `geometry_metrics/geometry_subset_metrics.csv`
 - `geometry_metrics/geometry_scene_correlations.csv`
 - `geometry_metrics/geometry_correlation_summary.csv`
+- `vggt_native_geometry/native_subset_consistency.csv`
+- `vggt_native_geometry/native_scene_correlations.csv`
+- `vggt_native_geometry/native_correlation_summary.csv`
 - FastGS `results.json` 或项目级 `metrics.json`
 - `manifest.yaml`
 - 可选：在 manifest 中记录散点图路径。

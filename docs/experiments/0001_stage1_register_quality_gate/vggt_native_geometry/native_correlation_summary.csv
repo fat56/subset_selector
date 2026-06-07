@@ -1,0 +1,14 @@
+metric,expected_direction,scenes,mean_spearman,spearman_expected_sign,mean_pearson,pearson_expected_sign,best_match
+depth_absrel_mean,negative,13,-0.450549,13/13,-0.459623,10/13,7/13
+depth_absrel_median,negative,13,-0.406594,10/13,-0.429309,11/13,7/13
+depth_log_rmse,negative,13,-0.362637,11/13,-0.367888,11/13,4/13
+pointmap_l1_norm,negative,13,-0.432967,12/13,-0.329491,11/13,7/13
+pointmap_median_norm,negative,13,-0.375824,12/13,-0.289749,10/13,6/13
+pointmap_p90_norm,negative,13,-0.441758,12/13,-0.330582,12/13,7/13
+pointmap_rmse_norm,negative,13,-0.468132,12/13,-0.416888,12/13,8/13
+pose_center_median_norm,negative,13,-0.538462,12/13,-0.549279,12/13,8/13
+pose_center_p90_norm,negative,13,-0.476923,12/13,-0.558544,12/13,3/13
+pose_center_rmse_norm,negative,13,-0.472527,12/13,-0.508835,12/13,5/13
+pose_fov_abs_mean,negative,13,-0.340659,11/13,-0.362012,10/13,8/13
+pose_rotation_mean_deg,negative,13,-0.551648,13/13,-0.473965,12/13,7/13
+pose_rotation_median_deg,negative,13,-0.397802,12/13,-0.419306,10/13,5/13

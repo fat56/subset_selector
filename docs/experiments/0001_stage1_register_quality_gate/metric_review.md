@@ -48,6 +48,9 @@
 - `fastgs_full_train_images4` reference 目前只覆盖 `mipnerf360_bonsai`，使用已完成 full-train FastGS reconstruction 作为 pseudo-GT。
 - 结果见 [geometry_metrics/](geometry_metrics/)。在 13-scene COLMAP sparse proxy 上，`register_mean_cosine` 与 F-score@1%、Chamfer-L1、accuracy/completeness 的 scene 内 mean Spearman 仍接近 0，说明当前 mean-pooled register proxy 不能作为几何质量门。
 - 这个结果不否定几何指标本身；主要局限是 reference 仍是 sparse COLMAP，subset 输出使用 raw Gaussian centers，尚未使用 depth fusion / surface samples，也尚未训练 register readout。
+- 随后补跑 [../../../scripts/run_stage1_vggt_native_consistency.py](../../../scripts/run_stage1_vggt_native_consistency.py)，直接比较 subset 与 full-train(non-test) 的 VGGT-native depth、pose 和 derived point-map consistency。结果见 [vggt_native_geometry/](vggt_native_geometry/)。
+- VGGT-native consistency 明显更有信号：`pose_rotation_mean_deg` mean Spearman -0.5516、`pose_center_median_norm` -0.5385、`pointmap_rmse_norm` -0.4681、`depth_absrel_mean` -0.4505。所有这些都是 error 指标，负相关是期望方向。
+- 因此当前最合理的 Stage 1 proxy 不是渲染 PSNR，也不是 raw Gaussian centers vs sparse COLMAP，而是 full-train reference 下的 VGGT-native 3D self-consistency；但它仍需外部几何或下游任务验证。
 
 短期可执行：
 
@@ -62,7 +65,7 @@
 中期建议：
 
 - 重新跑 VGGT cache，开启 `--include-depth --include-pose`，把 subset VGGT geometry 与 full-train VGGT geometry 比较。
-- 训练或校准 readout head 后，用同样的 geometry metrics 复测，而不是只看 mean-pooled register tokens。
+- 训练或校准 readout head 后，优先用 VGGT-native consistency 复测，而不是只看 mean-pooled register tokens。
 - 补 feature/register k-center 后，检查 geometry metrics 是否能区分 random、uniform、k-center。
 
 长期建议：

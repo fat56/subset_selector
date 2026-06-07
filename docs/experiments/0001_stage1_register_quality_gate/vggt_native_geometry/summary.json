@@ -1,0 +1,16 @@
+{
+  "subset_rows": 78,
+  "scene_correlation_rows": 169,
+  "correlation_summary_rows": 13,
+  "dataset_summary_rows": 18,
+  "cache_jobs": 91,
+  "max_pixels_per_image": 1024,
+  "max_pointmap_points": 60000,
+  "reference": "full_train_non_test VGGT-Omega depth/pose cache",
+  "notes": [
+    "Each subset image is compared against the same image in the full-train(non-test) cache.",
+    "Depth is aligned by a per-image median scale before abs-rel and log-RMSE are computed.",
+    "Pose and point-map metrics use Umeyama similarity alignment to remove global frame and scale ambiguity.",
+    "Point-map is derived from VGGT-Omega depth plus decoded pose/intrinsics; this local model does not emit a direct point-map head."
+  ]
+}

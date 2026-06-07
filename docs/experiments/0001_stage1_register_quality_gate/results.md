@@ -13,6 +13,7 @@
 - FastGS COLMAP reader 已补充 `stage1_split.json` 支持；prepared source 开启 `--eval` 时会使用 Stage 1 固定的 train/test 划分，而不是对物化后的 source 重新执行 llffhold。
 - 正式 random/uniform 矩阵使用 cropped/downsampled `images_4`，`--iterations 30000`，`--densification_interval 100`，FastGS 默认 `resolution=-1`。
 - VGGT-OMEGA register-token cache 已完成：13 个 full-train(non-test) reference + 78 个 random/uniform subset，共 91/91 成功。
+- VGGT-native depth/pose cache 已完成：同样 91/91 成功，并已计算 depth / pose / derived point-map consistency。
 
 ## 运行记录
 
@@ -184,6 +185,52 @@ PYTHONPATH=src external/FastGS/.venv/bin/python scripts/run_stage1_geometry_metr
 
 几何质量门结论：几何指标已经可以落地，但在 13-scene `colmap_sparse_full_scene` proxy 上，当前 `register_mean_cosine` 与 F-score、Chamfer、accuracy/completeness 的 scene 内相关性仍接近 0，best-cosine 与 best-geometry 的一致率也很低。因此，结论不是“几何指标不可用”，而是“mean-pooled register token proxy 仍不足以作为 selector 训练信号”。下一步应优先改进 proxy 本身：训练/校准 readout head，或改用 VGGT-native depth/point-map consistency，再补齐全 13 scene 的 full-train FastGS pseudo-GT 或 fused-depth/surface samples。
 
+## VGGT-native consistency
+
+2026-06-07 补跑 VGGT-OMEGA 原生几何输出一致性。脚本：[scripts/run_stage1_vggt_native_consistency.py](../../../scripts/run_stage1_vggt_native_consistency.py)。
+
+运行命令：
+
+```bash
+PYTHONPATH=src:/home/m/project/ltm/vggt-omega \
+  /home/m/project/ltm/vggt-omega/.venv/bin/python \
+  scripts/run_stage1_vggt_native_consistency.py \
+  --max-pixels-per-image 1024 \
+  --max-pointmap-points 60000
+```
+
+输出：
+
+- [native_subset_consistency.csv](vggt_native_geometry/native_subset_consistency.csv)：每个 scene/method 的 depth、pose、derived point-map consistency。
+- [native_scene_correlations.csv](vggt_native_geometry/native_scene_correlations.csv)：每个 scene 内 6 个候选 subset 的 `register_mean_cosine` vs native consistency 相关性。
+- [native_correlation_summary.csv](vggt_native_geometry/native_correlation_summary.csv)：按 metric 聚合的 mean Spearman/Pearson、方向命中数、best-method 一致数。
+- [native_dataset_summary.csv](vggt_native_geometry/native_dataset_summary.csv)：仅作数据集组运行概览。
+
+口径：
+
+- reference：每个 scene 的 full-train(non-test) VGGT-OMEGA cache。
+- subset：同一 scene 的 5 个 random + 1 个 uniform。只比较 subset train image 与 full reference 中同名 image 的输出。
+- depth：对同一张图的 subset depth 和 full depth 做 per-image median scale alignment，再计算 abs-rel 和 log RMSE。
+- pose：把 `pose_enc` 解码成 camera-from-world extrinsics，再用 Umeyama similarity 对齐 subset camera centers 到 full reference，计算 center error、rotation geodesic error、FoV error。
+- point-map：本地 VGGT-OMEGA 没有直接输出 point-map head；这里由 depth + pose/intrinsics 派生同像素 3D points，再做 similarity alignment 后计算 3D point error。
+
+所有下表指标都是 error，越低越好，因此期望 `register_mean_cosine` 与 error 负相关。
+
+| Metric | Scenes | Mean Spearman | Spearman sign | Mean Pearson | Pearson sign | Best match |
+|---|---:|---:|---:|---:|---:|---:|
+| depth_absrel_mean | 13 | -0.4505 | 13/13 | -0.4596 | 10/13 | 7/13 |
+| depth_log_rmse | 13 | -0.3626 | 11/13 | -0.3679 | 11/13 | 4/13 |
+| pointmap_rmse_norm | 13 | -0.4681 | 12/13 | -0.4169 | 12/13 | 8/13 |
+| pointmap_p90_norm | 13 | -0.4418 | 12/13 | -0.3306 | 12/13 | 7/13 |
+| pose_center_median_norm | 13 | -0.5385 | 12/13 | -0.5493 | 12/13 | 8/13 |
+| pose_center_rmse_norm | 13 | -0.4725 | 12/13 | -0.5088 | 12/13 | 5/13 |
+| pose_rotation_mean_deg | 13 | -0.5516 | 13/13 | -0.4740 | 12/13 | 7/13 |
+| pose_fov_abs_mean | 13 | -0.3407 | 11/13 | -0.3620 | 10/13 | 8/13 |
+
+Native consistency 结论：这组指标明显比 PSNR/SSIM/LPIPS 和 raw point-cloud proxy 更贴近 `register_mean_cosine`。尤其 `pose_rotation_mean_deg` 和 `pose_center_median_norm` 的 mean Spearman 已超过 0.5 量级，且方向命中达到 13/13 和 12/13。这说明 mean-pooled register token 虽然不能稳定预测渲染质量或外部 sparse geometry，但确实在 VGGT 自身的 depth/pose/point-map consistency 上有较强单调信号。
+
+限制：这是 VGGT-native self-consistency，reference 也是同一个模型在 full-train(non-test) 上的输出，因此它验证的是“subset 是否保留 VGGT 自己的三维解释”，不是外部真值几何，也不是下游 VLA 成功率。这个结果可以支持继续做 register-aware selector/readout，但还不应单独作为最终质量门。
+
 ## 观察
 
 - `stage1-prepare` 现在会把选中的 train images 和 llffhold held-out test images 一起物化到每个 FastGS source，并写入 split metadata。
@@ -197,3 +244,4 @@ PYTHONPATH=src external/FastGS/.venv/bin/python scripts/run_stage1_geometry_metr
 - FastGS 原生 COLMAP `--eval` 会对当前 source 内全部图片重新按 llffhold 切分；对 Stage 1 prepared source 这会把部分 held-out 图片混回训练集。已在 FastGS `scene/dataset_readers.py` 中加入 `stage1_split.json` 优先逻辑，并重跑 random/uniform 两条 20% sanity run。
 - random/uniform `images_4` 30k 矩阵稳定完成；mean-pooled register-token similarity 已补齐，但不足以通过质量门，当前 blocker 转为训练/校准 readout 或更换几何 proxy，并补齐 feature/register k-center。
 - point-cloud 几何 proxy 已补跑：COLMAP sparse reference 覆盖 13 个 scene，bonsai 另有 full FastGS reference。几何指标本身可执行，但当前 mean-pooled register cosine 对几何排序仍不稳定。
+- VGGT-native consistency 已补跑：depth、pose 和 derived point-map 指标均显示更强方向性，说明下一步 selector/readout 更应优先对齐 VGGT 原生三维输出，而不是只看渲染质量。
