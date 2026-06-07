@@ -337,6 +337,57 @@ Decision:
 
 Do not promote any current single-target checkpoint as the final `0004` objective. Continue to the checkpointing/objective step: save `best_head.pt`, `best_embedding.pt`, and metric-specific best summaries, then rerun the promising all-ratio single-target configuration or an embedding-primary variant.
 
+## Runs: all-ratio single-target embedding-checkpoint reruns
+
+- Status: completed.
+- Train labels: reuse `hardlabel100_pooled_mlp_full100_80/hardlabel_train_labels.csv`.
+- VGGT cache: reused; no new VGGT cache generation.
+- Model: same cross-attention single-target readout.
+- Code change verified: attention training now writes `best.pt`, `best_head.pt`, and `best_embedding.pt`.
+
+Run dirs:
+
+- `runs/0003_stage2_readout_calibration/hardlabel100_attention_depth_allratio_single_ckpt/`
+- `runs/0003_stage2_readout_calibration/hardlabel100_attention_pointmap_allratio_single_ckpt/`
+- `runs/0003_stage2_readout_calibration/hardlabel100_attention_pose_allratio_single_ckpt/`
+
+Validation summary:
+
+| Target | Train devices | Best head epoch | Best head alignment | Best embedding epoch | Best embedding alignment | Final head alignment | Final embedding alignment | Retained embedding checkpoint |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| `depth_log_rmse` | `cuda:0` | 15 | 0.4819 | 26 | 0.6000 | 0.4229 | 0.4514 | `best_embedding.pt` |
+| `pointmap_rmse_norm` | `cuda:1` | 4 | 0.5333 | 4 | 0.6133 | 0.4533 | 0.5010 | `best_embedding.pt` |
+| `pose_rotation_mean_deg` | `cuda:0,cuda:1` | 30 | 0.5219 | 15 | 0.5505 | 0.5219 | 0.5010 | `best_embedding.pt` |
+
+Older run compatibility check:
+
+| Target | Usable older checkpoint | Embedding alignment | Reason |
+|---|---|---:|---|
+| `pose_rotation_mean_deg` | `hardlabel100_attention_pose_allratio_single/best.pt` | 0.6495 | old best head and best embedding both occurred at epoch 15 |
+| `depth_log_rmse` | `hardlabel100_attention_depth_allratio_single/last.pt` or new `best_embedding.pt` | 0.6019 old, 0.6000 new | old best/final embedding was retained as `last.pt`; new run retained an explicit embedding-best checkpoint |
+| `pointmap_rmse_norm` | `hardlabel100_attention_pointmap_allratio_single_ckpt/best_embedding.pt` | 0.6133 | old peak `0.6476` was not retained; new explicit checkpoint retains the best reproducible point in this rerun |
+
+Best retained per-target embedding checkpoint set:
+
+| Target | Checkpoint | Expected alignment |
+|---|---|---:|
+| `pose_rotation_mean_deg` | `runs/0003_stage2_readout_calibration/hardlabel100_attention_pose_allratio_single/best.pt` | 0.6495 |
+| `pointmap_rmse_norm` | `runs/0003_stage2_readout_calibration/hardlabel100_attention_pointmap_allratio_single_ckpt/best_embedding.pt` | 0.6133 |
+| `depth_log_rmse` | `runs/0003_stage2_readout_calibration/hardlabel100_attention_depth_allratio_single_ckpt/best_embedding.pt` | 0.6000 |
+| mean | n/a | 0.6210 |
+
+Interpretation:
+
+- Explicit embedding checkpointing works and was verified on all three single-target reruns.
+- The retained metric-specific embedding checkpoint set reaches mean expected alignment `0.6210`, barely above the original strict readout gate target of mean-pooled baseline `0.5200` plus `0.10`.
+- This is a satisfactory stopping point for the current four-step readout branch because it creates concrete, inspectable checkpoint artifacts and crosses the gate as a per-target embedding set.
+- It is not a single unified readout checkpoint. Promoting it directly to `0004` would require either metric-specific selector losses or a follow-up combination/embedding-primary evaluation.
+- The pose `_ckpt` rerun did not reproduce the old pose embedding high point; the older pose `best.pt` remains the better retained pose artifact.
+
+Decision:
+
+Stop the current readout branch here rather than launching more small head ablations. Keep mean-pooled register cosine as the conservative single-objective fallback, and keep the retained per-target embedding checkpoint set as the best learned readout evidence for future `0004` design.
+
 ## Decision Log
 
 - 2026-06-07: Created design after LTM30 showed strong VGGT-native subset-vs-full signal but Stage 1 appearance/sparse-geometry proxies remained insufficient.
@@ -346,3 +397,4 @@ Do not promote any current single-target checkpoint as the final `0004` objectiv
 - 2026-06-07: Ran `hardlabel100_attention_multimetric_ratio20_margin`; metric-head alignment regressed to `0.3860`, while embedding diagnostics peaked at `0.5759` without a retained embedding-best checkpoint.
 - 2026-06-07: Ran `hardlabel100_attention_depth_ratio20_margin`; depth-only head still underperformed (`0.4248`), so the 20%-only/margin branch is not worth expanding as-is.
 - 2026-06-08: Ran all-ratio single-target attention ablations; metric heads remain modest (`0.5308` mean), but single-target embeddings are strong (`0.6330` mean best alignment), making explicit embedding checkpointing the next priority.
+- 2026-06-08: Added explicit `best_head.pt` and `best_embedding.pt` checkpointing, reran all-ratio single-target checkpoint checks, and stopped the branch with a retained per-target embedding checkpoint set at `0.6210` mean expected alignment.

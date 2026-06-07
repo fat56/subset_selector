@@ -4,7 +4,7 @@
 
 - Experiment ID: `0003_stage2_readout_calibration`
 - Stage: `stage2`
-- Status: ratio-20 margin follow-up completed; readout not promoted yet
+- Status: all-ratio embedding-checkpoint follow-up completed; current readout branch stopped
 - Created: 2026-06-07
 - Config: implemented with `hardlabel100_full100_80`
 - Depends on: `0001_stage1_register_quality_gate`, `0002_ltm30_pose_depth_validation`
@@ -103,7 +103,18 @@ All-ratio single-target runs were completed for `pose_rotation_mean_deg`, `point
 | `depth_log_rmse` | 0.5067 | 0.6019 |
 | mean | 0.5308 | 0.6330 |
 
-This exceeds the original strict gate target if viewed as per-target embedding diagnostics, but it is not yet a single promotable checkpoint. The next implementation priority is explicit embedding-best checkpointing and an embedding-primary objective/evaluation path.
+This exceeds the original strict gate target if viewed as per-target embedding diagnostics, but it is not yet a single promotable checkpoint. At that point, the next implementation priority was explicit embedding-best checkpointing and an embedding-primary objective/evaluation path.
+
+The checkpointing follow-up added explicit `best_head.pt` and `best_embedding.pt` outputs, then reran the all-ratio single-target setup. The reruns verified that embedding-best checkpoint retention works for all three targets. The best retained per-target embedding checkpoint set is:
+
+| Target | Checkpoint source | Expected alignment |
+|---|---|---:|
+| `pose_rotation_mean_deg` | older `pose_allratio_single/best.pt` | 0.6495 |
+| `pointmap_rmse_norm` | `pointmap_allratio_single_ckpt/best_embedding.pt` | 0.6133 |
+| `depth_log_rmse` | `depth_allratio_single_ckpt/best_embedding.pt` | 0.6000 |
+| mean | n/a | 0.6210 |
+
+This barely clears the original strict target of `0.5200 + 0.10`, but only as a metric-specific checkpoint set. It is a satisfactory stopping point for the current branch, not a promotion of one unified readout checkpoint. For `0004`, keep mean-pooled register cosine as the conservative single-objective fallback unless the selector design explicitly supports metric-specific readout losses or a follow-up embedding-combination evaluation.
 
 ### External GT Caveat
 

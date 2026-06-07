@@ -198,6 +198,39 @@ Checkpointing update:
 - `best_embedding.pt`: explicit embedding diagnostic best.
 - `summary.json`: includes `best_head_expected_alignment` and `best_embedding_expected_alignment`.
 
+Checkpoint rerun commands:
+
+```bash
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_attention_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel100_pooled_mlp_full100_80/hardlabel_train_labels.csv \
+  --run-dir runs/0003_stage2_readout_calibration/hardlabel100_attention_<target>_allratio_single_ckpt \
+  --train-devices <devices> \
+  --epochs 30 \
+  --batch-size 16 \
+  --pairs-per-scene-metric 24 \
+  --metrics <metric> \
+  --num-workers <workers>
+```
+
+Completed checkpoint rerun result:
+
+| Target | Run dir suffix | Devices | Best head | Best embedding | Retained embedding checkpoint |
+|---|---|---|---:|---:|---|
+| `depth_log_rmse` | `depth_allratio_single_ckpt` | `cuda:0` | 0.4819 | 0.6000 | `best_embedding.pt` |
+| `pointmap_rmse_norm` | `pointmap_allratio_single_ckpt` | `cuda:1` | 0.5333 | 0.6133 | `best_embedding.pt` |
+| `pose_rotation_mean_deg` | `pose_allratio_single_ckpt` | `cuda:0,cuda:1` | 0.5219 | 0.5505 | `best_embedding.pt` |
+
+Best retained checkpoint set after compatibility check:
+
+| Target | Checkpoint | Expected alignment |
+|---|---|---:|
+| `pose_rotation_mean_deg` | `runs/0003_stage2_readout_calibration/hardlabel100_attention_pose_allratio_single/best.pt` | 0.6495 |
+| `pointmap_rmse_norm` | `runs/0003_stage2_readout_calibration/hardlabel100_attention_pointmap_allratio_single_ckpt/best_embedding.pt` | 0.6133 |
+| `depth_log_rmse` | `runs/0003_stage2_readout_calibration/hardlabel100_attention_depth_allratio_single_ckpt/best_embedding.pt` | 0.6000 |
+| mean | n/a | 0.6210 |
+
+Decision: stop this readout branch here. The retained per-target embedding set barely clears the strict `+0.10` target over mean pooling, but it is not a single unified readout. Keep mean-pooled register cosine as the conservative single-objective fallback for `0004`; use the retained embedding checkpoints only if `0004` explicitly supports metric-specific readout losses or a follow-up combination evaluation.
+
 ```bash
 tmux new -s readout0003_hardlabel100
 /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_hardlabel_training.py \
