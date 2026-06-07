@@ -65,6 +65,48 @@
    - If a readout passes gate, freeze checkpoint and promote it to `0004_stage2_fixed_k_selector_training`.
    - If none pass, keep mean pooling as the selector baseline objective and do not rely on a trained readout.
 
+## Hard-Label Pilot Flow
+
+After the `train500_full16` warmup, run `hardlabel100_full100_80`:
+
+1. Select 50 WildRGBD and 50 DL3DV scenes, excluding LTM30 validation scenes.
+2. Use full-view frames:
+
+   - WildRGBD: 100 frames.
+   - DL3DV: 80 frames.
+
+3. Generate 12 hard subsets per scene:
+
+   - 5 x `random20`.
+   - 3 x `random50`.
+   - `uniform20`, `uniform50`.
+   - `contiguous20_seed000`, `contiguous50_seed000`.
+
+4. Cache VGGT-OMEGA with depth and pose for full and all hard subsets.
+5. Compute subset-vs-full native geometry labels.
+6. Train pooled readout with pairwise ranking over same-scene good/bad subsets.
+7. Validate on LTM30 hard subset metrics.
+8. If pooled readout still fails, keep the hard labels and train the 2-layer attention readout.
+
+Implementation command:
+
+```bash
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/prepare_stage2_readout_hardlabel100.py
+```
+
+```bash
+tmux new -s readout0003_hardlabel100
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_hardlabel_training.py \
+  --manifest docs/experiments/0003_stage2_readout_calibration/hardlabel100_manifest.json \
+  --cache-root caches/vggt_omega/0003_stage2_readout_calibration/hardlabel100_full100_80_images512 \
+  --run-dir runs/0003_stage2_readout_calibration/hardlabel100_pooled_mlp_full100_80 \
+  --cache-devices cuda:0,cuda:1 \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 40 \
+  --batch-size 12 \
+  --pairs-per-scene 48
+```
+
 ## Future Commands
 
 These are target command shapes for the implementation phase; they should not be run until the corresponding CLI/config exists.

@@ -66,7 +66,81 @@ Do not promote this pooled readout checkpoint as the locked `0004` selector obje
 
 Recommended next step: generate hard subset native labels for a smaller held-out training subset, then train either pairwise-ranking pooled readout or the 2-layer attention readout. Keep mean-pooled register cosine as the current fallback objective for `0004`.
 
+## Run: `hardlabel100_pooled_mlp_full100_80`
+
+- Date: 2026-06-07
+- Train scenes: 100
+- Train source: 50 WildRGBD + 50 DL3DV
+- Full-view frames per scene: WildRGBD 100, DL3DV 80
+- Hard subsets per scene: 12
+- VGGT cache jobs: 1,300/1,300 succeeded
+- Hard native label rows: 1,200
+- Cache devices: `cuda:0,cuda:1`
+- Train devices: `cuda:0,cuda:1`
+- Model: pooled MLP readout
+- Objective: pairwise ranking over same-scene hard subsets, with positive full/subset cosine and symmetric InfoNCE auxiliary losses.
+- Validation: LTM30 hard subset validation, 30 scenes x 6 subsets = 180 rows.
+- Run dir: `runs/0003_stage2_readout_calibration/hardlabel100_pooled_mlp_full100_80/`
+
+This run uses actual hard native labels rather than online masks. Each subset is rerun through VGGT-OMEGA and compared against the same images inside the full-view cache for `pose_rotation_mean_deg`, `pointmap_rmse_norm`, and `depth_log_rmse`.
+
+## Hard-Label Outputs
+
+- `hardlabel_native_metrics.csv`: subset-vs-full VGGT-native metrics for 1,200 hard subsets.
+- `hardlabel_train_labels.csv`: per-scene z-scored training targets and token paths.
+- `hardlabel_summary.json`: label counts and target range.
+- `best.pt`: best checkpoint by LTM30 primary expected alignment.
+- `best_eval/summary.json`: best-checkpoint LTM30 validation summary.
+- `best_eval/ltm30_readout_scores.csv`: per-subset best-checkpoint readout scores.
+- `last.pt`: final checkpoint.
+- `summary.json`: run-level summary.
+- `training_history.json`: train-step logs.
+
+## Hard-Label Validation Against LTM30
+
+Lower native geometry errors should have higher readout/register score, so Spearman should be negative. `Expected alignment` below is `-mean_spearman`, where higher is better.
+
+| Method | pose rotation rho | point-map RMSE rho | depth log RMSE rho | Mean rho | Expected alignment |
+|---|---:|---:|---:|---:|---:|
+| mean-pooled register baseline | -0.5429 | -0.5181 | -0.4990 | -0.5200 | 0.5200 |
+| `train500_full16` pooled best | -0.5390 | -0.5581 | -0.4895 | -0.5289 | 0.5289 |
+| `hardlabel100` pooled best | -0.5048 | -0.5962 | -0.5771 | -0.5594 | 0.5594 |
+| `hardlabel100` pooled final | -0.4724 | -0.5619 | -0.5333 | -0.5225 | 0.5225 |
+
+Best checkpoint:
+
+- checkpoint: `runs/0003_stage2_readout_calibration/hardlabel100_pooled_mlp_full100_80/best.pt`
+- epoch: 35
+- step: 14,000
+- primary expected alignment: 0.5594
+- training time after labels: 2,802.3 seconds
+
+## Hard-Label Interpretation
+
+The hard-label pilot is a useful improvement over the warmup, but it is not yet strong enough to promote the pooled MLP readout as the locked Stage 2 selector objective.
+
+Positive signs:
+
+- Mean primary expected alignment improves from the mean-pooled register baseline `0.5200` to `0.5594`.
+- The gain over the warmup best checkpoint is larger: `+0.0305`.
+- Point-map RMSE and depth log RMSE correlations improve clearly over mean pooling.
+- The full hard-label pipeline worked end to end: dual-GPU VGGT cache, native label generation, dual-device readout training, best-checkpoint validation.
+
+Limitations:
+
+- The average gain over mean pooling is `+0.0394`, below the proposed `+0.10` gate.
+- Pose rotation correlation regresses from `-0.5429` to `-0.5048`; the model appears to learn point/depth consistency better than pose rotation.
+- The final checkpoint is worse than the best checkpoint, so checkpoint selection matters and over-training remains possible.
+- The pooled MLP architecture may be too lossy for camera/register token structure even when hard labels are good.
+
+## Hard-Label Decision
+
+Do not promote the pooled MLP hard-label checkpoint as the final `0004` selector objective yet.
+
+Recommended next step: keep this hard-label dataset and train a structured attention readout, or expand hard-label scenes/subset diversity before deciding whether to freeze a readout. Mean-pooled register cosine remains the fallback selector proxy.
+
 ## Decision Log
 
 - 2026-06-07: Created design after LTM30 showed strong VGGT-native subset-vs-full signal but Stage 1 appearance/sparse-geometry proxies remained insufficient.
 - 2026-06-07: Ran `train500_pooled_mlp_full16`; stable but does not pass the readout-improvement gate.
+- 2026-06-07: Ran `hardlabel100_pooled_mlp_full100_80`; hard native labels improve the pooled readout materially over the warmup, but still do not pass the strict `+0.10` gate.

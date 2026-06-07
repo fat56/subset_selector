@@ -4,9 +4,9 @@
 
 - Experiment ID: `0003_stage2_readout_calibration`
 - Stage: `stage2`
-- Status: design-draft
+- Status: hard-label pilot completed; readout not promoted yet
 - Created: 2026-06-07
-- Config: not created yet. Create only after this design is accepted.
+- Config: implemented with `hardlabel100_full100_80`
 - Depends on: `0001_stage1_register_quality_gate`, `0002_ltm30_pose_depth_validation`
 - Feeds into: `0004_stage2_fixed_k_selector_training`
 
@@ -37,6 +37,18 @@
 | `pose_center_rmse_norm` | -0.4857 | 26/30 | 19/30 |
 
 因此，register tokens 确实含有可用于判断 subset 3D consistency 的信息；不足之处在于当前读法太粗糙。
+
+### Hard-Label Pilot Result
+
+`hardlabel100_full100_80` 已完成：100 个训练 scene，1,300 个 VGGT cache jobs，1,200 个 subset-vs-full hard native labels。pairwise-ranking pooled MLP readout 的 best checkpoint 在 LTM30 held-out validation 上达到：
+
+| Method | Expected alignment |
+|---|---:|
+| mean-pooled register baseline | 0.5200 |
+| `train500_full16` warmup best | 0.5289 |
+| `hardlabel100_full100_80` best | 0.5594 |
+
+该结果说明 hard native labels 确实比 weak online mask warmup 更有效，但提升为 `+0.0394`，仍未达到原定 `+0.10` readout gate。因此 pooled MLP readout 暂不晋级为 `0004` 的锁定 selector objective；mean-pooled register cosine 仍保留为 fallback，下一步更合理的是复用 hard labels 训练 attention readout 或扩大 hard-label 数据。
 
 ### External GT Caveat
 
@@ -272,6 +284,50 @@ Selection policy:
 - validation: LTM30 hard subset VGGT-native metrics remain validation-only
 
 This is a warmup/calibration run designed to enter training quickly. It does not yet generate hard native labels for all 500 training scenes; that heavier follow-up can be enabled after the full-cache readout baseline is measured.
+
+### Hard-Label Full-View Pilot
+
+The `train500_full16` warmup proved the pipeline but did not pass the readout gate. The next experiment should spend compute on a better-aligned target rather than more weakly supervised scenes.
+
+Use `hardlabel100_full100_80`:
+
+| Setting | Value |
+|---|---:|
+| WildRGBD scenes | 50 |
+| DL3DV scenes | 50 |
+| Total train scenes | 100 |
+| WildRGBD full-view frames | 100 |
+| DL3DV full-view frames | 80 |
+| Hard subsets per scene | 12 |
+| VGGT cache jobs | 1,300 |
+
+Subset methods per scene:
+
+- `random20_seed000` ... `random20_seed004`
+- `random50_seed000` ... `random50_seed002`
+- `uniform20`
+- `uniform50`
+- `contiguous20_seed000`
+- `contiguous50_seed000`
+
+This produces actual hard native labels:
+
+```text
+full images -> VGGT-OMEGA -> full depth/pose/register cache
+hard subset images -> VGGT-OMEGA -> subset depth/pose/register cache
+same subset images in full cache vs subset cache -> native geometry errors
+```
+
+Primary hard-label target:
+
+```text
+target_error =
+    zscore_by_scene(pose_rotation_mean_deg)
+  + zscore_by_scene(pointmap_rmse_norm)
+  + zscore_by_scene(depth_log_rmse)
+```
+
+The readout should rank lower `target_error` subsets above higher `target_error` subsets. LTM30 remains held-out validation and is not used for training.
 
 ## End-to-End Decision
 
