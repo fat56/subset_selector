@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- Experiment ID: `0002_stage2_fixed_k_selector_training`
+- Experiment ID: `0003_stage2_fixed_k_selector_training`
 - Stage: `stage2`
 - Status: design-draft
 - Created: 2026-06-05

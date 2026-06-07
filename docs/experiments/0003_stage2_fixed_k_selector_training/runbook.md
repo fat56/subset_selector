@@ -6,7 +6,7 @@
 - VGGT-OMEGA checkpoint、FastGS/3DGS backend、dataset registry 均已可用。
 - 每个 scene 按 train/val/test 做场景级划分，同一 scene 不跨 split。
 - full scene 的 VGGT-OMEGA camera/register token cache 已准备好，或已有生成计划。
-- 本实验设计已被接受后，才创建 `configs/experiments/0002_stage2_fixed_k_selector_training.yaml` 和对应 `src` 实现。
+- 本实验设计已被接受后，才创建 `configs/experiments/0003_stage2_fixed_k_selector_training.yaml` 和对应 `src` 实现。
 
 ## Planned Flow
 
@@ -58,30 +58,30 @@
 
 ```bash
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage2-cache \
-  --config configs/experiments/0002_stage2_fixed_k_selector_training.yaml \
+  --config configs/experiments/0003_stage2_fixed_k_selector_training.yaml \
   --dataset <dataset_or_scene_set>
 ```
 
 ```bash
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage2-train \
-  --config configs/experiments/0002_stage2_fixed_k_selector_training.yaml \
+  --config configs/experiments/0003_stage2_fixed_k_selector_training.yaml \
   --dataset <dataset_or_scene_set>
 ```
 
 ```bash
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage2-eval-hard \
-  --config configs/experiments/0002_stage2_fixed_k_selector_training.yaml \
+  --config configs/experiments/0003_stage2_fixed_k_selector_training.yaml \
   --checkpoint <selector_checkpoint> \
   --dataset <dataset_or_scene_set>
 ```
 
 ```bash
 PYTHONPATH=src python -m vggt_omega_selector.cli.manage record-run \
-  --experiment 0002_stage2_fixed_k_selector_training \
+  --experiment 0003_stage2_fixed_k_selector_training \
   --stage stage2 \
   --method learned_fixed_k_selector \
   --dataset <dataset_or_scene_set> \
-  --config configs/experiments/0002_stage2_fixed_k_selector_training.yaml \
+  --config configs/experiments/0003_stage2_fixed_k_selector_training.yaml \
   --notes "fixed K selector hard validation"
 ```
 

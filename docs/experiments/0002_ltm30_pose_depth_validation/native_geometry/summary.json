@@ -1,0 +1,21 @@
+{
+  "scene_count": 30,
+  "cache_jobs": 210,
+  "records": 210,
+  "register_rows": 210,
+  "native_subset_rows": 180,
+  "gt_rows": 210,
+  "native_scene_correlation_rows": 390,
+  "gt_scene_correlation_rows": 270,
+  "random_seeds": 5,
+  "image_resolution": 512,
+  "mode": "balanced",
+  "reference": "LTM30 full split for subset-vs-full metrics; WildRGBD sensor depth/pose for gt_* metrics.",
+  "notes": [
+    "random20_seed000 reuses manifest random20; later random seeds are deterministic scene-keyed samples from full.",
+    "VGGT-native subset metrics compare the same images in subset cache against the full cache.",
+    "gt_depth_* aligns VGGT depth to sensor depth with per-image median scale before errors are computed.",
+    "gt_pose_* aligns VGGT camera centers to dataset camera_pose centers with one Umeyama similarity per method.",
+    "Only text manifests and CSV summaries are written to docs; tensor caches stay under caches/."
+  ]
+}

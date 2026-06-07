@@ -1,2 +1,4 @@
 experiment_id,title,stage,status,created_at,primary_doc,config,latest_run,decision
 0001_stage1_register_quality_gate,Stage 1 register distance versus FastGS quality gate,stage1,planned,2026-06-03,docs/experiments/0001_stage1_register_quality_gate/proposal.md,configs/experiments/0001_stage1_register_quality_gate.yaml,,pending
+0002_ltm30_pose_depth_validation,LTM30 pose/depth validation manifest,validation-data,completed,2026-06-07,docs/experiments/0002_ltm30_pose_depth_validation/results.md,docs/experiments/0002_ltm30_pose_depth_validation/manifest.json,docs/experiments/0002_ltm30_pose_depth_validation/native_geometry/summary.json,ready
+0003_stage2_fixed_k_selector_training,Stage 2 fixed-K selector training,stage2,design-draft,2026-06-05,docs/experiments/0003_stage2_fixed_k_selector_training/proposal.md,not created yet,,pending

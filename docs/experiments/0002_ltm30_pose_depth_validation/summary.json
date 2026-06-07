@@ -1,0 +1,18 @@
+{
+  "summary": {
+    "selected_scene_count": 30,
+    "selected_by_dataset": {
+      "wildrgbd_harrison": 30
+    },
+    "selected_by_depth_kind": {
+      "sensor_depth_png": 30
+    },
+    "candidate_summary": {
+      "wildrgbd_harrison:sensor_depth_png": 41,
+      "DL3DV-ALL-480P:colmap_photometric_bin": 30
+    },
+    "total_full_frames": 3000,
+    "total_random20_frames": 600,
+    "total_uniform20_frames": 600
+  }
+}
