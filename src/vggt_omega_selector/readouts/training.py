@@ -645,7 +645,8 @@ def train_attention_multimetric_readout(config: AttentionHardLabelTrainConfig) -
     start_time = time.time()
     total_steps = config.epochs * len(loader)
     global_step = 0
-    best_score = -float("inf")
+    best_head_score = -float("inf")
+    best_embedding_score = -float("inf")
 
     for epoch in range(1, config.epochs + 1):
         model.train()
@@ -724,11 +725,24 @@ def train_attention_multimetric_readout(config: AttentionHardLabelTrainConfig) -
                 metrics=config.metrics,
             )
             print(json.dumps({"event": "eval", "epoch": epoch, **eval_summary}, sort_keys=True), flush=True)
-            expected_alignment = float(eval_summary.get("mean_primary_expected_alignment", float("nan")))
-            score = expected_alignment if not math.isnan(expected_alignment) else -float("inf")
-            if score > best_score:
-                best_score = score
+            head_alignment = float(eval_summary.get("mean_primary_expected_alignment", float("nan")))
+            head_score = head_alignment if not math.isnan(head_alignment) else -float("inf")
+            if head_score > best_head_score:
+                best_head_score = head_score
+                save_attention_checkpoint(config.run_dir / "best_head.pt", model, config, epoch, global_step, eval_summary)
                 save_attention_checkpoint(config.run_dir / "best.pt", model, config, epoch, global_step, eval_summary)
+            embedding_alignment = float(eval_summary.get("embedding_mean_primary_expected_alignment", float("nan")))
+            embedding_score = embedding_alignment if not math.isnan(embedding_alignment) else -float("inf")
+            if embedding_score > best_embedding_score:
+                best_embedding_score = embedding_score
+                save_attention_checkpoint(
+                    config.run_dir / "best_embedding.pt",
+                    model,
+                    config,
+                    epoch,
+                    global_step,
+                    eval_summary,
+                )
 
         save_attention_checkpoint(config.run_dir / "last.pt", model, config, epoch, global_step, eval_summary)
 
@@ -736,7 +750,9 @@ def train_attention_multimetric_readout(config: AttentionHardLabelTrainConfig) -
         "epochs": config.epochs,
         "steps": global_step,
         "elapsed_sec": round(time.time() - start_time, 2),
-        "best_expected_alignment": best_score,
+        "best_expected_alignment": best_head_score,
+        "best_head_expected_alignment": best_head_score,
+        "best_embedding_expected_alignment": best_embedding_score,
     }
     (config.run_dir / "training_history.json").write_text(json.dumps(history, indent=2) + "\n", encoding="utf-8")
     (config.run_dir / "summary.json").write_text(json.dumps(final, indent=2) + "\n", encoding="utf-8")

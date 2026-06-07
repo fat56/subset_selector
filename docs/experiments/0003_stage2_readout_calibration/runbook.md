@@ -191,6 +191,13 @@ Completed result:
 
 Next action: add explicit `best_head.pt` and `best_embedding.pt` checkpointing before using this signal for promotion decisions.
 
+Checkpointing update:
+
+- `best.pt`: compatibility path, same as metric-head best.
+- `best_head.pt`: explicit metric-head best.
+- `best_embedding.pt`: explicit embedding diagnostic best.
+- `summary.json`: includes `best_head_expected_alignment` and `best_embedding_expected_alignment`.
+
 ```bash
 tmux new -s readout0003_hardlabel100
 /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_hardlabel_training.py \
