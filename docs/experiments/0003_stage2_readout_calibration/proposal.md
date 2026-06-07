@@ -92,6 +92,19 @@ This tests whether the previous readout was diluted by mixed subset ratios and n
 
 Result: the metric-head objective regressed sharply, with best expected alignment `0.3860`. The embedding diagnostic peaked at `0.5759`, but the current loop checkpoints by metric-head score, so no embedding-best checkpoint was retained. A depth-only single-target check also underperformed, with best depth-head expected alignment `0.4248`. The immediate conclusion is that 20%-only/margin filtering is not sufficient and may remove useful all-ratio supervision; future ablations should revise objective/checkpoint selection or return to all-ratio labels with single-target heads.
 
+### All-Ratio Single-Target Follow-Up
+
+All-ratio single-target runs were completed for `pose_rotation_mean_deg`, `pointmap_rmse_norm`, and `depth_log_rmse`. Metric heads remained modest, with mean best expected alignment `0.5308`, but the single-target embeddings were substantially stronger:
+
+| Target | Best head alignment | Best embedding alignment |
+|---|---:|---:|
+| `pose_rotation_mean_deg` | 0.5524 | 0.6495 |
+| `pointmap_rmse_norm` | 0.5333 | 0.6476 |
+| `depth_log_rmse` | 0.5067 | 0.6019 |
+| mean | 0.5308 | 0.6330 |
+
+This exceeds the original strict gate target if viewed as per-target embedding diagnostics, but it is not yet a single promotable checkpoint. The next implementation priority is explicit embedding-best checkpointing and an embedding-primary objective/evaluation path.
+
 ### External GT Caveat
 
 WildRGBD sensor depth 有弱但可用的方向性；direct sensor pose GT 目前不可靠，不应作为主训练目标。第一版 readout 应优先对齐 VGGT-native subset-vs-full depth、derived point-map、pose rotation consistency，并把 sensor depth 作为 sanity check。

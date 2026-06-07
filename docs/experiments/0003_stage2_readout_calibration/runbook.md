@@ -165,6 +165,32 @@ Depth-only completed result:
 - Best embedding diagnostic expected alignment: `0.5543`.
 - Decision: do not continue pose-only/point-only under this exact 20%-only/margin setup.
 
+## All-Ratio Single-Target Attention Ablations
+
+Reuse all `hardlabel100` rows and train one metric at a time:
+
+```bash
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_attention_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel100_pooled_mlp_full100_80/hardlabel_train_labels.csv \
+  --run-dir runs/0003_stage2_readout_calibration/hardlabel100_attention_<target>_allratio_single \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 30 \
+  --batch-size 16 \
+  --pairs-per-scene-metric 24 \
+  --metrics <metric> \
+  --num-workers 4
+```
+
+Completed result:
+
+| Target | Run dir suffix | Best head | Best embedding | Decision |
+|---|---|---:|---:|---|
+| `pose_rotation_mean_deg` | `pose_allratio_single` | 0.5524 | 0.6495 | promising embedding |
+| `pointmap_rmse_norm` | `pointmap_allratio_single` | 0.5333 | 0.6476 | promising embedding |
+| `depth_log_rmse` | `depth_allratio_single` | 0.5067 | 0.6019 | promising embedding, weak head |
+
+Next action: add explicit `best_head.pt` and `best_embedding.pt` checkpointing before using this signal for promotion decisions.
+
 ```bash
 tmux new -s readout0003_hardlabel100
 /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_hardlabel_training.py \

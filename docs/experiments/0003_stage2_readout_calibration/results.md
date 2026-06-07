@@ -288,6 +288,55 @@ Decision:
 
 Do not promote. Stop the current 20%-only/margin branch after this depth-only check.
 
+## Runs: all-ratio single-target attention ablations
+
+- Status: completed.
+- Train labels: reuse `hardlabel100_pooled_mlp_full100_80/hardlabel_train_labels.csv`.
+- VGGT cache: reused; no new VGGT cache generation.
+- Model: cross-attention readout with one metric head per run.
+- Training filter: none; all 12 subset methods per scene are used.
+- Pair filter: none beyond same-scene positive metric margin.
+- Label rows: 1,200 rows from 100 scenes.
+- Training pairs: 2,400 pairs per target metric.
+
+Run dirs:
+
+- `runs/0003_stage2_readout_calibration/hardlabel100_attention_pose_allratio_single/`
+- `runs/0003_stage2_readout_calibration/hardlabel100_attention_pointmap_allratio_single/`
+- `runs/0003_stage2_readout_calibration/hardlabel100_attention_depth_allratio_single/`
+
+This ablation tests whether the prior multi-metric attention result was limited by cross-target interference rather than by architecture or data scale.
+
+Validation summary:
+
+| Target | Best head rho | Best head alignment | Best embedding rho | Best embedding alignment | Final head alignment | Final embedding alignment |
+|---|---:|---:|---:|---:|---:|---:|
+| `pose_rotation_mean_deg` | -0.5524 | 0.5524 | -0.6495 | 0.6495 | 0.4895 | 0.5924 |
+| `pointmap_rmse_norm` | -0.5333 | 0.5333 | -0.6476 | 0.6476 | 0.3943 | 0.5143 |
+| `depth_log_rmse` | -0.5067 | 0.5067 | -0.6019 | 0.6019 | 0.5067 | 0.6019 |
+| mean of three best heads | -0.5308 | 0.5308 | n/a | n/a | n/a | n/a |
+| mean of three best embeddings | n/a | n/a | -0.6330 | 0.6330 | n/a | n/a |
+
+Comparison to prior best:
+
+| Method | pose alignment | pointmap alignment | depth alignment | Mean |
+|---|---:|---:|---:|---:|
+| mean-pooled register baseline | 0.5429 | 0.5181 | 0.4990 | 0.5200 |
+| `hardlabel100_attention_multimetric` heads | 0.5295 | 0.5505 | 0.6171 | 0.5657 |
+| all-ratio single-target heads | 0.5524 | 0.5333 | 0.5067 | 0.5308 |
+| all-ratio single-target embeddings | 0.6495 | 0.6476 | 0.6019 | 0.6330 |
+
+Interpretation:
+
+- Single-target metric heads do not beat the prior multi-metric head on average. Depth regresses most sharply from `0.6171` to `0.5067`.
+- Single-target embeddings are much stronger than the heads. Their per-target best average is `0.6330`, which exceeds the original strict gate target of roughly `0.6200`.
+- This is not yet a promotable single checkpoint: the three embedding scores come from three independently trained single-target runs, and the current training loop does not consistently retain `best_embedding.pt`.
+- The result changes the next priority. The useful signal is not "train a better metric head"; it is "make embedding checkpointing/objective explicit, then evaluate whether embedding-selected checkpoints generalize and can be combined."
+
+Decision:
+
+Do not promote any current single-target checkpoint as the final `0004` objective. Continue to the checkpointing/objective step: save `best_head.pt`, `best_embedding.pt`, and metric-specific best summaries, then rerun the promising all-ratio single-target configuration or an embedding-primary variant.
+
 ## Decision Log
 
 - 2026-06-07: Created design after LTM30 showed strong VGGT-native subset-vs-full signal but Stage 1 appearance/sparse-geometry proxies remained insufficient.
@@ -296,3 +345,4 @@ Do not promote. Stop the current 20%-only/margin branch after this depth-only ch
 - 2026-06-07: Ran `hardlabel100_attention_multimetric`; attention and separate metric heads slightly improve best alignment to `0.5657`, still below the strict promotion gate.
 - 2026-06-07: Ran `hardlabel100_attention_multimetric_ratio20_margin`; metric-head alignment regressed to `0.3860`, while embedding diagnostics peaked at `0.5759` without a retained embedding-best checkpoint.
 - 2026-06-07: Ran `hardlabel100_attention_depth_ratio20_margin`; depth-only head still underperformed (`0.4248`), so the 20%-only/margin branch is not worth expanding as-is.
+- 2026-06-08: Ran all-ratio single-target attention ablations; metric heads remain modest (`0.5308` mean), but single-target embeddings are strong (`0.6330` mean best alignment), making explicit embedding checkpointing the next priority.
