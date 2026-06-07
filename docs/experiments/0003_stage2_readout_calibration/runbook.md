@@ -94,6 +94,28 @@ Implementation command:
 /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/prepare_stage2_readout_hardlabel100.py
 ```
 
+## Attention Multi-Metric Follow-Up
+
+Reuse the completed hard-label cache and labels from `hardlabel100_pooled_mlp_full100_80`; do not rerun VGGT cache.
+
+Target command:
+
+```bash
+tmux new -s readout0003_attention_multimetric
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_attention_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel100_pooled_mlp_full100_80/hardlabel_train_labels.csv \
+  --run-dir runs/0003_stage2_readout_calibration/hardlabel100_attention_multimetric \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 30 \
+  --batch-size 16 \
+  --pairs-per-scene-metric 24 \
+  --num-workers 4
+```
+
+Primary evaluation is metric-head LTM30 expected alignment. Embedding-cosine expected alignment is reported as a secondary diagnostic.
+
+Completed result: best metric-head expected alignment reached `0.5657` at epoch 25, which is slightly above pooled hard-label readout `0.5594` but below the strict promotion gate.
+
 ```bash
 tmux new -s readout0003_hardlabel100
 /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_hardlabel_training.py \

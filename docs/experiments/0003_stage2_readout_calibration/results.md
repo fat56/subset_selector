@@ -139,8 +139,56 @@ Do not promote the pooled MLP hard-label checkpoint as the final `0004` selector
 
 Recommended next step: keep this hard-label dataset and train a structured attention readout, or expand hard-label scenes/subset diversity before deciding whether to freeze a readout. Mean-pooled register cosine remains the fallback selector proxy.
 
+## Run: `hardlabel100_attention_multimetric`
+
+- Status: completed.
+- Train labels: reuse `hardlabel100_pooled_mlp_full100_80/hardlabel_train_labels.csv`.
+- VGGT cache: reused; no new VGGT cache generation.
+- Model: cross-attention readout with scene query and three metric queries.
+- Metric heads: `pose_rotation_mean_deg`, `pointmap_rmse_norm`, `depth_log_rmse`.
+- Objective: per-metric pairwise ranking, full-view score anchor, low-weight embedding alignment and InfoNCE.
+- Validation: LTM30 hard subset validation, metric-head expected alignment as primary score.
+- Train devices: `cuda:0,cuda:1`
+- Epochs: 30
+- Steps: 13,500
+- Training time: 2,022.5 seconds
+- Run dir: `runs/0003_stage2_readout_calibration/hardlabel100_attention_multimetric/`
+
+This run tests whether the pooled readout failed mainly because it discarded camera/register token structure.
+
+Validation summary:
+
+| Method | pose rotation rho | point-map RMSE rho | depth log RMSE rho | Mean rho | Expected alignment |
+|---|---:|---:|---:|---:|---:|
+| mean-pooled register baseline | -0.5429 | -0.5181 | -0.4990 | -0.5200 | 0.5200 |
+| `hardlabel100` pooled best | -0.5048 | -0.5962 | -0.5771 | -0.5594 | 0.5594 |
+| attention metric-head best | -0.5295 | -0.5505 | -0.6171 | -0.5657 | 0.5657 |
+| attention metric-head final | -0.5029 | -0.5162 | -0.5752 | -0.5314 | 0.5314 |
+| attention embedding-cosine best diagnostic | -0.5105 | -0.5219 | -0.5733 | -0.5352 | 0.5352 |
+
+Best checkpoint:
+
+- checkpoint: `runs/0003_stage2_readout_calibration/hardlabel100_attention_multimetric/best.pt`
+- epoch: 25
+- step: 11,250
+- primary metric-head expected alignment: 0.5657
+- embedding-cosine diagnostic expected alignment: 0.5352
+
+Interpretation:
+
+- Attention/multi-metric heads improve over pooled hard-label readout only slightly: `0.5657` vs `0.5594`.
+- The strongest gain is depth log RMSE: `-0.6171`, better than pooled `-0.5771`.
+- Pose rotation recovers part of the pooled regression but still remains below mean-pooling baseline: `-0.5295` vs `-0.5429`.
+- The final checkpoint again drops from the best checkpoint, reinforcing that early stopping is required.
+- The result does not pass the strict `+0.10` promotion gate; architecture alone is not the main bottleneck.
+
+Decision:
+
+Do not promote the attention readout as the locked `0004` selector objective. Keep mean-pooled register cosine as the selector fallback. The next readout improvement should prioritize more/diverse hard labels or target audit rather than another small head tweak.
+
 ## Decision Log
 
 - 2026-06-07: Created design after LTM30 showed strong VGGT-native subset-vs-full signal but Stage 1 appearance/sparse-geometry proxies remained insufficient.
 - 2026-06-07: Ran `train500_pooled_mlp_full16`; stable but does not pass the readout-improvement gate.
 - 2026-06-07: Ran `hardlabel100_pooled_mlp_full100_80`; hard native labels improve the pooled readout materially over the warmup, but still do not pass the strict `+0.10` gate.
+- 2026-06-07: Ran `hardlabel100_attention_multimetric`; attention and separate metric heads slightly improve best alignment to `0.5657`, still below the strict promotion gate.

@@ -4,7 +4,7 @@
 
 - Experiment ID: `0003_stage2_readout_calibration`
 - Stage: `stage2`
-- Status: hard-label pilot completed; readout not promoted yet
+- Status: attention follow-up completed; readout not promoted yet
 - Created: 2026-06-07
 - Config: implemented with `hardlabel100_full100_80`
 - Depends on: `0001_stage1_register_quality_gate`, `0002_ltm30_pose_depth_validation`
@@ -47,8 +47,37 @@
 | mean-pooled register baseline | 0.5200 |
 | `train500_full16` warmup best | 0.5289 |
 | `hardlabel100_full100_80` best | 0.5594 |
+| `hardlabel100_attention_multimetric` best | 0.5657 |
 
-该结果说明 hard native labels 确实比 weak online mask warmup 更有效，但提升为 `+0.0394`，仍未达到原定 `+0.10` readout gate。因此 pooled MLP readout 暂不晋级为 `0004` 的锁定 selector objective；mean-pooled register cosine 仍保留为 fallback，下一步更合理的是复用 hard labels 训练 attention readout 或扩大 hard-label 数据。
+该结果说明 hard native labels 确实比 weak online mask warmup 更有效；cross-attention/multi-metric head 也略优于 pooled MLP。但 best attention readout 相对 mean pooling 的提升为 `+0.0457`，仍未达到原定 `+0.10` readout gate。因此本轮 readout 暂不晋级为 `0004` 的锁定 selector objective；mean-pooled register cosine 仍保留为 fallback。下一步更合理的是扩大 hard-label scenes/subset diversity，或重新审计 VGGT-native pseudo-label 目标，而不是继续只调小 head。
+
+### Attention Multi-Metric Follow-Up
+
+下一步先不重新跑 VGGT，也不盲目扩大 hard-label 数据，而是复用 `hardlabel100_full100_80` 的 token cache 和 1,200 条 hard labels，训练一个 token-structure-aware readout：
+
+```text
+camera/register tokens
+  -> Linear(2048, 512)
+  -> frame embedding + token-slot embedding
+  -> learned scene/metric queries cross-attend to all VGGT tokens
+  -> scene embedding + per-metric quality heads
+```
+
+关键变化：
+
+- 用 cross-attention queries 读取 token，而不是 pooled `mean/max/std`。
+- 三个 metric head 分别学习 `pose_rotation_mean_deg`、`pointmap_rmse_norm`、`depth_log_rmse`，不再强行先混成一个 `target_error`。
+- 训练目标是同一 scene 内、同一 metric 下的 pairwise ranking：低 native error subset 的 metric score 应高于高 native error subset。
+- full-view cache 作为 anchor：full 的 metric score 应高于 subset。
+- 低权重保留 embedding-to-full alignment 和 InfoNCE，用于稳定 scene embedding，但 gate 主要看 metric-head score。
+
+本 follow-up 的判断标准：
+
+- 如果 metric-head expected alignment 明显超过 `0.5594`，说明瓶颈主要是 pooled MLP 架构。
+- 如果仍停在 `0.56` 左右，则应优先扩大 hard-label scenes/subset diversity 或重新审计 pseudo-label 目标，而不是继续调小 head。
+- 若 pose head 仍弱而 point/depth head 强，说明 pose signal 需要独立 selector/readout 或单独 pose-target calibration。
+
+Result: attention follow-up best checkpoint reached `0.5657` metric-head expected alignment. It improves over pooled MLP by only `+0.0063`, so the bottleneck is not just pooled summarization. The readout still fails the strict promotion gate.
 
 ### External GT Caveat
 
@@ -146,6 +175,8 @@ tokens
 | attention readout, 4 blocks | 2048 -> 512, 4 Transformer blocks | 13-14M |
 
 这些参数量相对 VGGT-OMEGA 很小；训练成本主要来自 subset label/cache 生成，而不是 head 本身。
+
+Implementation note: the current follow-up uses a cross-attention variant rather than full self-attention over all image tokens, so memory grows roughly with query count x token count instead of token count squared.
 
 ## Training Targets
 
