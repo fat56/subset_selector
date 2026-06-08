@@ -1,25 +1,25 @@
-# LTM30 Pose/Depth Validation Manifest
+# LTM30 Pose/Depth 验证 Manifest
 
-- Created: 2026-06-07
-- Source root: `data/raw/ltm_datasets`
-- Selected scenes: 30
-- Full frames: 3000
-- Random20 frames: 600
-- Uniform20 frames: 600
-- Max full frames per scene: 200
+- 创建日期: 2026-06-07
+- 数据根目录: `data/raw/ltm_datasets`
+- 入选 scenes: 30
+- Full frames 数量: 3000
+- Random20 frames 数量: 600
+- Uniform20 frames 数量: 600
+- 每个 scene 最大 full frames: 200
 - Subset ratio: 0.2
-- Random seed: 20260607
+- Random seed: 20260607（固定随机种子）
 
-## Selected Scene Counts
+## 入选 Scene 统计
 
-| Key | Count |
+| Key | 数量 |
 |---|---:|
 | dataset:wildrgbd_harrison | 30 |
 | depth:sensor_depth_png | 30 |
 
-## Scenes
+## Scene 列表
 
-| Scene | Dataset | Depth | Eligible | Full | 20% |
+| Scene | Dataset | Depth | 合格帧 | Full | 20% |
 |---|---|---|---:|---:|---:|
 | `wildrgbd_harrison/TV/scene_011` | wildrgbd_harrison | sensor_depth_png | 100 | 100 | 20 |
 | `wildrgbd_harrison/apple/scene_002` | wildrgbd_harrison | sensor_depth_png | 100 | 100 | 20 |
