@@ -231,6 +231,79 @@ Checkpoint rerun 完成结果：
 
 决策：在此停止 readout 分支。retained per-target embedding set 刚好超过 mean pooling + `0.10` 的严格目标，但它不是 single unified readout。`0004` 继续保留 mean-pooled register cosine 作为保守 single-objective fallback；只有当 `0004` 明确支持 metric-specific readout losses，或先完成 follow-up combination evaluation 时，才使用这些 retained embedding checkpoints。
 
+## Hardlabel300 Scale-Up Follow-Up
+
+为了检查 hardlabel100 attention multi-metric 是否受数据量限制，生成 `hardlabel300_full100_80`：
+
+```bash
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/prepare_stage2_readout_hardlabel100.py \
+  --manifest-stem hardlabel300 \
+  --name hardlabel300_full100_80 \
+  --wildrgbd-scenes 150 \
+  --dl3dv-scenes 150 \
+  --wildrgbd-full-frames 100 \
+  --dl3dv-full-frames 80 \
+  --random-seed 20260608
+```
+
+Labels/cache 命令：
+
+```bash
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_hardlabel_training.py \
+  --manifest docs/experiments/0003_stage2_readout_calibration/hardlabel300_manifest.json \
+  --cache-root caches/vggt_omega/0003_stage2_readout_calibration/hardlabel300_full100_80_images512 \
+  --run-dir runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80 \
+  --cache-devices cuda:0,cuda:1 \
+  --train-devices cuda:0,cuda:1 \
+  --labels-only \
+  --batch-size 12 \
+  --pairs-per-scene 48
+```
+
+完成结果：
+
+- selected scenes: 300，150 WildRGBD + 150 DL3DV。
+- VGGT jobs: 3,900/3,900 成功。
+- Hard native label rows: 3,600。
+- Label rows by dataset: DL3DV 1,800，WildRGBD 1,800。
+
+2-layer attention multi-metric 命令：
+
+```bash
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_attention_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
+  --run-dir runs/0003_stage2_readout_calibration/hardlabel300_attention_multimetric_2layer \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 40 \
+  --batch-size 16 \
+  --pairs-per-scene-metric 24 \
+  --num-layers 2 \
+  --num-workers 4
+```
+
+2-layer 完成结果：
+
+- Steps: 54,000。
+- Training time: 8,195.6 秒。
+- Best head expected alignment: `0.5651` at epoch 20。
+- Best embedding expected alignment: `0.6063` at epoch 29，保存在 `best_embedding.pt`。
+- Final embedding expected alignment: `0.5981`。
+- 决策: 继续跑 4-layer；2-layer 已明显提升 embedding signal，但仍未达到 single unified checkpoint 的约 `0.62` 目标。
+
+4-layer attention multi-metric 命令：
+
+```bash
+/home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_attention_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
+  --run-dir runs/0003_stage2_readout_calibration/hardlabel300_attention_multimetric_4layer \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 40 \
+  --batch-size 16 \
+  --pairs-per-scene-metric 24 \
+  --num-layers 4 \
+  --num-workers 4
+```
+
 ```bash
 tmux new -s readout0003_hardlabel100
 /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_hardlabel_training.py \
