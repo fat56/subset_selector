@@ -1,108 +1,138 @@
 # Runbook
 
-## Preconditions
+## 当前状态
 
-- `0003_stage2_readout_calibration` 已明确采用 frozen readout checkpoint 或 mean-pooling baseline objective。
-- VGGT-OMEGA checkpoint、FastGS/3DGS backend、dataset registry 均已可用。
-- 每个 scene 按 train/val/test 做场景级划分，同一 scene 不跨 split。
-- full scene 的 VGGT-OMEGA camera/register token cache 已准备好，或已有生成计划。
-- 本实验设计已被接受后，才创建 `configs/experiments/0004_stage2_fixed_k_selector_training.yaml` 和对应 `src` 实现。
+`0004/main_v1` 已进入第一版实现和训练阶段。目标是先得到一个固定 `20%` ratio 的 selector checkpoint，训练指标以 `mean-pooled register cosine` proxy 为主；hard subset VGGT 重跑和 FastGS/3DGS 下游验算暂时后置。
 
-## Planned Flow
+关键路径：
 
-0. Freeze the design.
+- Config: `configs/experiments/0004_stage2_fixed_k_selector_training.yaml`
+- Manifest: `docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json`
+- Manifest summary: `docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_summary.md`
+- Cache root: `caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512`
+- Run dir: `runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector`
 
-   - 确认第一版 `K`：推荐沿用 Stage 1 的 `20%` ratio。
-   - 确认 selector 输入：推荐使用 cached VGGT camera/register summaries。
-   - 确认 readout 状态：使用 `0003` 选定并冻结的 readout；如果 `0003` 未通过，则使用 mean pooling baseline objective。
+## 前置条件
 
-1. Build caches.
+- VGGT-OMEGA 512 checkpoint 可用。
+- `data/processed` 可访问，且包含 `bridgedata_v2`、`nyuv2`、`tartanair`、`bonn`。
+- ScanNet 使用 `data/raw/ltm_datasets/yifei_scannetv2_hf/scannetv2/scans/*/color`。
+- 双卡训练默认使用 `cuda:0,cuda:1`。
+- 本轮不生成 `depth.pt`、`depth_conf.pt` 或 dense VGGT output cache。
 
-   - `z_full` for every train/val/test scene。
-   - per-image `camera_token_i`。
-   - per-image `register_mean_i` and `register_max_i`。
-   - optional DINO/CLIP/image-quality/pose/overlap features。
-
-2. Import readout/proxy decision.
-
-   从 `0003_stage2_readout_calibration` 导入 frozen readout checkpoint、validation summary、或 mean-pooling fallback decision。本实验不重新训练 readout。
-
-3. Train soft-token selector.
-
-   - input: cached per-image features。
-   - model: FeatureProjector + 4-layer SetSelector + ScoreHead。
-   - selection: relaxed top-K mask。
-   - MVP objective: `L_pos`, plus optional `L_nce` when batch scenes are diverse enough。
-   - auxiliary losses such as coverage, redundancy, quality, depth, or pose stay off until a concrete failure mode appears。
-
-4. Run hard-subset validation.
-
-   - 对 val scenes 用 `topK(scores, K)` 得到 selected indices。
-   - 按原始帧序排序 selected indices。
-   - 重新运行 frozen VGGT-OMEGA on selected images。
-   - 计算 hard `register_cosine_similarity`。
-
-5. Run FastGS/3DGS validation.
-
-   - learned selector 与 Stage 1 baselines 使用完全相同的 scene、K、backend 设置。
-   - 记录 PSNR/SSIM/LPIPS、运行时间和失败 case。
-
-6. Decide.
-
-   - 通过则进入 Stage 3 variable-K/Pareto 设计。
-   - 不通过则根据 soft/hard gap 或 FastGS gap 选择 ranking refinement、coverage/geometry auxiliary，或停止。
-
-## Future Commands
-
-以下命令是实现后的目标形态，不应在当前文档阶段直接运行。
+## 生成 Manifest
 
 ```bash
-PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage2-cache \
-  --config configs/experiments/0004_stage2_fixed_k_selector_training.yaml \
-  --dataset <dataset_or_scene_set>
+python scripts/prepare_stage2_selector_main_v1.py --manifest-stem main_v1
 ```
+
+当前 `main_v1` 统计：
+
+| Dataset | Selected scenes |
+|---|---:|
+| `bridgedata_v2` | 1000 |
+| `nyuv2` | 549 |
+| `tartanair` | 163 |
+| `bonn` | 26 |
+| `yifei_scannetv2_hf` | 400 |
+
+Split:
+
+| Split | Scenes |
+|---|---:|
+| train | 1728 |
+| val | 205 |
+| test | 205 |
+
+总计 `2138` scenes、`105204` sampled frames。每个 scene 最多 `64` 帧，最少 `12` 帧。
+
+## 启动训练
+
+推荐用 tmux 启动完整 cache + training：
 
 ```bash
-PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage2-train \
-  --config configs/experiments/0004_stage2_fixed_k_selector_training.yaml \
-  --dataset <dataset_or_scene_set>
+mkdir -p runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector
+
+tmux new-session -d -s selector0004_main_v1 '
+cd /home/m/project/ltm/selector &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_selector_training.py \
+  --manifest docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json \
+  --cache-root caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512 \
+  --run-dir runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector \
+  --checkpoint 512 \
+  --image-resolution 512 \
+  --mode balanced \
+  --feature-dtype float16 \
+  --cache-devices cuda:0,cuda:1 \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 20 \
+  --batch-size 16 \
+  --num-workers 4 \
+  2>&1 | tee runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/tmux.log
+'
 ```
+
+如果只需要重训 selector，不重建 feature cache：
 
 ```bash
-PYTHONPATH=src python -m vggt_omega_selector.cli.manage stage2-eval-hard \
-  --config configs/experiments/0004_stage2_fixed_k_selector_training.yaml \
-  --checkpoint <selector_checkpoint> \
-  --dataset <dataset_or_scene_set>
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_selector_training.py \
+  --skip-cache \
+  --manifest docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json \
+  --cache-root caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512 \
+  --run-dir runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 20 \
+  --batch-size 16 \
+  --num-workers 4
 ```
+
+## 监控
+
+tmux:
 
 ```bash
-PYTHONPATH=src python -m vggt_omega_selector.cli.manage record-run \
-  --experiment 0004_stage2_fixed_k_selector_training \
-  --stage stage2 \
-  --method learned_fixed_k_selector \
-  --dataset <dataset_or_scene_set> \
-  --config configs/experiments/0004_stage2_fixed_k_selector_training.yaml \
-  --notes "fixed K selector hard validation"
+tmux ls
+tmux capture-pane -pt selector0004_main_v1:0 -S -80
 ```
 
-## Required Artifacts
+Feature cache logs:
 
-- `z_full.pt` or equivalent full-scene embedding cache。
-- `per_image_features.pt` or per-scene feature shards。
-- optional readout checkpoint and calibration manifest。
-- selector checkpoint。
-- `selected_indices.json` for every evaluated scene。
-- `stage2_subset_manifest.json`。
-- hard VGGT-OMEGA cache for selected subsets。
-- FastGS/3DGS metrics JSON。
-- training curves: loss, soft cosine, hard cosine, retrieval accuracy。
-- `manifest.yaml` with config path, checkpoint path, dataset split, K, and backend version。
+```bash
+tail -n 20 runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/feature_cache_cuda0.log
+tail -n 20 runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/feature_cache_cuda1.log
+```
 
-## Checks
+Training log:
 
-- readout checkpoint is fixed during selector training unless an explicit ablation says otherwise。
-- `R` register count is read from VGGT-OMEGA checkpoint/config, not hard-coded。
-- train/val/test split is scene-level。
-- hard selected indices are sorted by original frame order before VGGT-OMEGA。
-- learned selector is compared against the exact Stage 1 baselines at the same `K`。
-- final decision uses hard-subset FastGS/3DGS metrics, not only soft proxy loss。
+```bash
+tail -n 50 runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/tmux.log
+```
+
+主要事件：
+
+- `feature_cache_start`: 两张卡开始分片 cache。
+- `feature_cache_done`: 某张卡分片 cache 完成。
+- `train_step`: selector training 已进入稳定训练阶段，日志里包含 `steps_per_sec` 和 `eta_sec`。
+- `eval`: 每个 epoch 的 val soft/hard proxy cosine。
+- `done`: 训练完成并写出 summary。
+
+## 输出
+
+训练成功后应产生：
+
+- `feature_index.json`: scene 到 `selector_features.pt` 的索引。
+- `best_soft.pt`: 按 val soft cosine 选择的 checkpoint。
+- `best_hard_proxy.pt`: 按 val hard proxy cosine 选择的 checkpoint。
+- `last.pt`: 最后一轮 checkpoint。
+- `summary.json`: 训练摘要。
+- `train_config.json` 和 `config.json`: 训练参数记录。
+
+## 判断口径
+
+本轮只判断 selector 是否值得进入 hard validation：
+
+- val `hard_proxy_cosine` 是否随训练稳定提升。
+- `soft_hard_gap` 是否可控，没有持续扩大。
+- top-K proxy 是否明显强于随机/均匀 baseline。当前脚本先产出 learned proxy，baseline 对照可作为下一步补充。
+
+只有当 proxy 结果有明确提升，再进入 hard subset VGGT rerun 和 FastGS/3DGS 验算。

@@ -4,9 +4,11 @@
 
 - Experiment ID: `0004_stage2_fixed_k_selector_training`
 - Stage: `stage2`
-- Status: design-draft
+- Status: implementation-ready / main_v1 starting
 - Created: 2026-06-05
-- Config: not created yet. Create only after this design is accepted.
+- Updated: 2026-06-08
+- Config: `configs/experiments/0004_stage2_fixed_k_selector_training.yaml`
+- Main manifest: `docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json`
 - Depends on: `0001_stage1_register_quality_gate`, `0002_ltm30_pose_depth_validation`, `0003_stage2_readout_calibration`
 
 ## Question
@@ -19,9 +21,49 @@
 
 ## Scope
 
-本实验只设计和验证 Stage 2 的训练方案，不在当前步骤创建 config 或 `src` 实现。第一版固定预算，推荐从 Stage 1 已验证的 `20%` ratio 开始，再做 `10%`、`30%` 或固定 `K=10/20` 消融。
+本实验已经进入第一版实现。`main_v1` 先训练固定 `20%` ratio 的 selector，目标是得到一个可用的 selector checkpoint 和 proxy diagnostics；hard subset VGGT 重跑和 FastGS/3DGS 下游验算暂时后置，不阻塞本轮 selector 网络训练。
 
 本实验不以节省 VGGT-OMEGA 推理为主要卖点。推荐 MVP 使用 Stage 1/Stage 2 cache 中的 VGGT per-image tokens 或 summaries 作为 selector 输入，适合离线数据集压缩。如果后续目标变成减少 VGGT 推理成本，应另开 cheap-image-feature selector，输入 DINO/CLIP/image-quality 特征。
+
+## Main V1 实施方案
+
+`0003_stage2_readout_calibration` 的结论是：hardlabel300 2-layer attention multimetric 的 best embedding 达到 `0.6063`，明显强于 mean-pooled register baseline `0.5200`，但还没有稳定跨过 single unified checkpoint 的严格 `0.62` promotion target；4-layer 对照也没有更好。因此 `0004/main_v1` 不把 learned readout 作为训练依赖，而是采用更保守、目标固定的 `mean-pooled register cosine` 作为第一版 selector objective。
+
+本轮实际实现和原始设计的关系：
+
+- Teacher/backbone: frozen VGGT-OMEGA 512 checkpoint。
+- Selector target: full scene 的 mean-pooled register embedding。
+- Selector input: 每帧 compact VGGT summary，不保存 depth、depth_conf、pointmap 或 full dense VGGT outputs。
+- Differentiable selection: bounded sigmoid soft top-K，mask 每行总和约等于 `K = round(0.20 * N)`。
+- Hard proxy metric: 对 selector top-K 的 per-frame `register_mean` 做 hard aggregate，再与 full embedding 计算 cosine。
+- 下游 3DGS/FastGS: 本轮先放一边，等 selector checkpoint 和 proxy 曲线确认后再接。
+
+`main_v1` 数据规模：
+
+| Dataset | Source | Available scenes | Selected scenes |
+|---|---|---:|---:|
+| `bridgedata_v2` | `data/processed/bridgedata_v2` | 25446 | 1000 |
+| `nyuv2` | `data/processed/nyuv2` | 549 | 549 |
+| `tartanair` | `data/processed/tartanair` | 163 | 163 |
+| `bonn` | `data/processed/bonn` | 26 | 26 |
+| `yifei_scannetv2_hf` | `data/raw/ltm_datasets/yifei_scannetv2_hf` | 1510 | 400 |
+
+Split 和帧数：
+
+| Split | Scenes |
+|---|---:|
+| train | 1728 |
+| val | 205 |
+| test | 205 |
+
+总计 `2138` scenes、`105204` sampled frames。每个 scene 最多采样 `64` 帧，最少要求 `12` 帧。ScanNet 使用 `data/raw/ltm_datasets/yifei_scannetv2_hf/scannetv2/scans/*/color`，不使用 `data/processed/scannet_v2` 作为本轮主源。
+
+实现入口：
+
+- Manifest builder: `scripts/prepare_stage2_selector_main_v1.py`
+- Feature cache + training runner: `scripts/run_stage2_selector_training.py`
+- Compact feature runner: `src/vggt_omega_selector/tools/vggt_selector_feature_runner.py`
+- Selector model: `src/vggt_omega_selector/selectors/models.py`
 
 ## Recommended Architecture
 

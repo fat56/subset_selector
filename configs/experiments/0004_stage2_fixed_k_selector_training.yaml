@@ -1,0 +1,95 @@
+experiment:
+  id: 0004_stage2_fixed_k_selector_training
+  title: Stage 2 fixed-ratio selector main_v1
+  stage: stage2
+  status: running
+  created: 2026-06-08
+
+question: Can a contextual fixed-ratio selector learn a better 20% subset proxy from compact VGGT-OMEGA per-image register features?
+
+dependencies:
+  - docs/experiments/0001_stage1_register_quality_gate
+  - docs/experiments/0002_ltm30_pose_depth_validation
+  - docs/experiments/0003_stage2_readout_calibration
+
+dataset_manifest:
+  path: docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json
+  summary: docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_summary.md
+  split_policy: scene_level_no_cross_scene_leakage
+  selected_scene_count: 2138
+  total_frames: 105204
+  sources:
+    bridgedata_v2:
+      selected: 1000
+      root: data/processed/bridgedata_v2
+    nyuv2:
+      selected: 549
+      root: data/processed/nyuv2
+    tartanair:
+      selected: 163
+      root: data/processed/tartanair
+    bonn:
+      selected: 26
+      root: data/processed/bonn
+    yifei_scannetv2_hf:
+      selected: 400
+      root: data/raw/ltm_datasets/yifei_scannetv2_hf
+
+teacher:
+  integration: configs/integrations/vggt_omega.yaml
+  checkpoint: 512
+  image_resolution: 512
+  mode: balanced
+  cache_devices: [cuda:0, cuda:1]
+  cache_root: caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512
+  cache_policy:
+    type: compact_selector_features
+    save_dense_depth: false
+    save_depth_conf: false
+    save_full_pointmap: false
+    per_scene_file: selector_features.pt
+    fields:
+      - camera_token
+      - register_mean
+      - register_max
+      - register_std
+      - frame_pos
+      - full_embedding_mean_register
+
+selector:
+  run_dir: runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector
+  input_feature_dim: 8193
+  hidden_dim: 512
+  num_layers: 4
+  num_heads: 8
+  dropout: 0.1
+  ratio: 0.20
+  differentiable_mask: bounded_sigmoid_soft_topk
+  temperature_start: 1.0
+  temperature_end: 0.2
+
+training:
+  train_devices: [cuda:0, cuda:1]
+  epochs: 20
+  batch_size: 16
+  lr: 0.0001
+  weight_decay: 0.0001
+  nce_weight: 0.2
+  num_workers: 4
+  objective:
+    positive_cosine_weight: 1.0
+    symmetric_nce_weight: 0.2
+    coverage_weight: 0.0
+    redundancy_weight: 0.0
+    pose_weight: 0.0
+    depth_weight: 0.0
+
+evaluation:
+  primary_training_metric: val_hard_proxy_cosine
+  proxy_embedding: mean_pooled_register_cosine
+  hard_subset_vggt_eval: deferred
+  fastgs_3dgs_eval: deferred
+  gates:
+    - compare_against_uniform_and_random_proxy
+    - inspect_soft_hard_proxy_gap
+    - promote_only_after_hard_subset_or_downstream_validation
