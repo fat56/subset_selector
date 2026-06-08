@@ -191,6 +191,8 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_
 
 `main_v2` 的 primary diagnostic 是 `hard_minus_uniform`。只有 learned topK 至少达到 uniform stride，才值得进入 hard subset VGGT rerun。
 
+当前完整 run 已完成：`best_margin.pt` 的 `hard_minus_uniform = -0.000087`，未过 promotion gate，但已经明显高于 random。
+
 ## 判断口径
 
 本轮只判断 selector 是否值得进入 hard validation：

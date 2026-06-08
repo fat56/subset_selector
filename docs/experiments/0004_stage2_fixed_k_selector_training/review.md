@@ -58,9 +58,9 @@ Proxy baseline on val:
 - 跑 `main_v2_baseline_rank_selector`：复用 `main_v1` compact cache，用 uniform/random baseline-aware objective 训练。
 - 对 `main_v2` 先跑同样 cache-only proxy baseline，只有超过 uniform/random 后再进入 hard subset VGGT rerun。
 
-## Main V2 Plan
+## Main V2 Result
 
-`main_v2` 先不引入新的 VGGT cache 或 3DGS 验算。它只回答一个更小的问题：learned selector 能不能在 mean-register proxy 上至少追平 uniform/random。
+`main_v2` 没有引入新的 VGGT cache 或 3DGS 验算。它只回答一个更小的问题：learned selector 能不能在 mean-register proxy 上至少追平 uniform/random。
 
 训练目标：
 
@@ -74,3 +74,20 @@ Promotion gate:
 - learned topK mean hard proxy cosine `>=` uniform stride。
 - learned topK mean hard proxy cosine `>` random 20%。
 - soft-hard gap `<= 0.005`。
+
+结果：
+
+- `best_margin.pt`: epoch 16。
+- learned topK hard proxy cosine: `0.998955`。
+- uniform stride: `0.999042`。
+- random 20%, 5 seeds: `0.993221`。
+- `hard_minus_uniform = -0.000087`。
+- `hard_minus_random = +0.005293`。
+- soft-hard gap: `0.000072`。
+
+结论：
+
+- `main_v2` 明显修复了 `main_v1`：learned 从 `0.969982` 提升到 `0.998955`。
+- 它高于 random，但仍没有超过 uniform，因此没有通过 promotion gate。
+- soft-hard gap 已经很小，说明问题不是 relaxation，而是 mean-register proxy 本身对 uniform coverage 过于友好。
+- 下一步不应继续在同一个 proxy 上堆训练轮次；应该换更强 supervision，例如 hard native labels、候选 subset ranking、register-k-center 对照，或 `0003` learned-readout auxiliary。

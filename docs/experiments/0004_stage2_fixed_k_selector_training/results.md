@@ -87,12 +87,14 @@ Do not promote `main_v1_meanpool_selector` to hard subset VGGT or FastGS/3DGS va
 
 ## Run: `main_v2_baseline_rank_selector`
 
-- Status: planned / smoke passed.
+- Status: completed.
 - Config: `configs/experiments/0004_stage2_fixed_k_selector_training_main_v2.yaml`
 - Cache: reuse `caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512/`
 - Run dir: `runs/0004_stage2_fixed_k_selector_training/main_v2_baseline_rank_selector/`
 - Objective: baseline-aware rank objective with uniform target CE。
 - Budget: `20%` ratio。
+- Training epochs / steps: `20` / `2160`
+- Training elapsed: `101.15` sec。
 
 1-epoch smoke on full manifest:
 
@@ -101,3 +103,29 @@ Do not promote `main_v1_meanpool_selector` to hard subset VGGT or FastGS/3DGS va
 | 1 | 0.999021 | 0.998906 | 0.999042 | 0.993662 | -0.000137 | 0.005243 |
 
 Interpretation: smoke already recovers near-uniform coverage and beats random on the cache-only proxy. Full 20-epoch run is needed to see whether it can cross uniform rather than merely imitate it.
+
+Full run checkpoints:
+
+| Checkpoint | Epoch | Val Hard Proxy | Uniform Proxy | Random Proxy | Hard - Uniform | Hard - Random | Soft-Hard Gap |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `best_margin.pt` | 16 | 0.998955 | 0.999042 | 0.993662 | -0.000087 | 0.005293 | 0.000072 |
+| `best_hard_proxy.pt` | 16 | 0.998955 | 0.999042 | 0.993662 | -0.000087 | 0.005293 | 0.000072 |
+| `best_soft.pt` | 3 | 0.998713 | 0.999042 | 0.993662 | -0.000329 | 0.005051 | 0.000326 |
+| `last.pt` | 20 | 0.998856 | 0.999042 | 0.993662 | -0.000187 | 0.005193 | 0.000040 |
+
+Proxy eval on `best_margin.pt`, 5 random seeds:
+
+| Method | Mean Hard Proxy Cosine | Median | Min | Max |
+|---|---:|---:|---:|---:|
+| all frames | 1.000000 | 1.000000 | 1.000000 | 1.000000 |
+| uniform stride | 0.999042 | 0.999463 | 0.993098 | 0.999987 |
+| learned topK, `best_margin.pt` | 0.998955 | 0.999463 | 0.989059 | 0.999987 |
+| random 20%, 5 seeds | 0.993221 | 0.996456 | 0.904004 | 0.999998 |
+| prefix 20% | 0.942779 | 0.950483 | 0.633729 | 0.999949 |
+
+Interpretation:
+
+- `main_v2` fixes the main_v1 failure mode: learned topK improves from `0.969982` to `0.998955` and beats random by `+0.005293` on val。
+- It still does not beat uniform stride: `hard_minus_uniform = -0.000087` at the best checkpoint。
+- The soft-hard gap is tiny (`0.000072`), so the remaining issue is not soft/hard mismatch; it is that the mean-register proxy strongly favors uniform coverage。
+- Do not promote to hard subset VGGT/3DGS on this proxy alone. The next useful step is a stronger objective or evaluator: hard native labels, register-k-center/ranking candidates, or `0003` learned-readout auxiliary.
