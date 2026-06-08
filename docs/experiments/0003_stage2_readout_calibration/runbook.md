@@ -304,6 +304,22 @@ Labels/cache 命令：
   --num-workers 4
 ```
 
+4-layer 完成结果：
+
+- Steps: 54,000。
+- Training time: 8,019.6 秒。
+- Best head expected alignment: `0.5511` at epoch 5。
+- Best embedding expected alignment: `0.5822` at epoch 32，保存在 `best_embedding.pt`。
+- Final embedding expected alignment: `0.4863`。
+- 决策: 不继续加深 attention。4-layer 没有超过 2-layer 的 best embedding `0.6063`，也没有超过 2-layer head `0.5651`。
+
+Scale-up 总结：
+
+- 数据量从 hardlabel100 扩到 hardlabel300 后，2-layer embedding diagnostic 明显提升到 `0.6063`。
+- 4-layer attention 未带来进一步提升，最佳 embedding 只有 `0.5822`。
+- 目前最强 single unified learned-readout artifact 是 `hardlabel300_attention_multimetric_2layer/best_embedding.pt`，但仍未达到约 `0.62` 的 strict target。
+- `0004` 继续保留 mean-pooled register cosine 作为保守 single-objective fallback；如果要使用 learned readout，优先考虑 metric-specific embedding checkpoint set 或先做 embedding-combination evaluation。
+
 ```bash
 tmux new -s readout0003_hardlabel100
 /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_readout_hardlabel_training.py \

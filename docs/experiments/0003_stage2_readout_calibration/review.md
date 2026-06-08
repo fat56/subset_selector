@@ -2,7 +2,7 @@
 
 ## Review 状态
 
-尚未 review。
+已做阶段性 review。`hardlabel300` 2-layer 与 4-layer scale-up 已跑完，但 single unified learned readout 仍未通过 strict promotion gate。
 
 ## Review 问题
 
@@ -21,4 +21,11 @@
 
 ## 当前建议
 
-继续推进设计和 dataset building。在 readout 通过 gate，或 selector 实验明确选择 mean pooling 作为 baseline objective 之前，不启动 fixed-K selector training。
+可以进入 `0004` 的 selector 设计，但默认使用 mean-pooled register cosine 作为保守 single-objective fallback。
+
+当前最强 learned-readout 证据有两类：
+
+- Single unified checkpoint: `hardlabel300_attention_multimetric_2layer/best_embedding.pt`，mean expected alignment `0.6063`，低于约 `0.6200` strict target。
+- Metric-specific checkpoint set: retained per-target embedding mean `0.6210`，刚好过 gate，但不是单个 unified checkpoint。
+
+除非 `0004` 明确采用 metric-specific readout losses，或先完成 embedding-combination evaluation，否则不 promotion learned readout。

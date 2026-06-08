@@ -386,11 +386,11 @@ Best retained per-target embedding checkpoint set（保留的最佳 per-target e
 
 决策：
 
-在这里停止当前 readout 分支，不再继续小型 head ablations。保留 mean-pooled register cosine 作为保守 single-objective fallback，并把 retained per-target embedding checkpoint set 作为未来 `0004` 设计中最好的 learned readout 证据。
+在这里停止当时的 hardlabel100 小型 head-ablation 分支。保留 mean-pooled register cosine 作为保守 single-objective fallback，并把 retained per-target embedding checkpoint set 作为未来 `0004` 设计中最好的 learned readout 证据。
 
 ## Runs: hardlabel300 attention multimetric scale-up
 
-- 状态: 2-layer run 已完成；4-layer run 正在训练。
+- 状态: 2-layer 和 4-layer runs 均已完成。
 - Train labels: 新生成 `hardlabel300_full100_80`。
 - 训练 scenes: 300，包含 150 WildRGBD + 150 DL3DV。
 - 每个 scene 的 full-view frames: WildRGBD 100, DL3DV 80。
@@ -406,9 +406,9 @@ Run dirs（运行目录）：
 - `runs/0003_stage2_readout_calibration/hardlabel300_attention_multimetric_2layer/`
 - `runs/0003_stage2_readout_calibration/hardlabel300_attention_multimetric_4layer/`
 
-这个 scale-up 用来测试前面 `hardlabel100_attention_multimetric` 的瓶颈是否主要来自 hard-label 数据量和训练轮次，而不是只来自 readout 架构。2-layer run 使用相同 cross-attention multi-metric readout，但把训练 labels 从 100 scenes / 1,200 rows 扩到 300 scenes / 3,600 rows，并跑 40 epochs。
+这个 scale-up 用来测试前面 `hardlabel100_attention_multimetric` 的瓶颈是否主要来自 hard-label 数据量、训练轮次或 attention depth，而不是只来自 readout 架构。2-layer 和 4-layer runs 都使用相同 cross-attention multi-metric readout，把训练 labels 从 100 scenes / 1,200 rows 扩到 300 scenes / 3,600 rows，并跑 40 epochs。
 
-Validation summary（2-layer 已完成）：
+Validation summary：
 
 | 方法 | pose alignment | pointmap alignment | depth alignment | Mean expected alignment |
 |---|---:|---:|---:|---:|
@@ -417,6 +417,9 @@ Validation summary（2-layer 已完成）：
 | hardlabel300 2-layer head best | 0.4895 | 0.5867 | 0.6190 | 0.5651 |
 | hardlabel300 2-layer embedding best | 0.6019 | 0.5829 | 0.6343 | 0.6063 |
 | hardlabel300 2-layer final embedding | 0.5143 | 0.6210 | 0.6590 | 0.5981 |
+| hardlabel300 4-layer head best | 0.4971 | 0.5467 | 0.6095 | 0.5511 |
+| hardlabel300 4-layer embedding best | 0.5905 | 0.5524 | 0.6038 | 0.5822 |
+| hardlabel300 4-layer final embedding | 0.4362 | 0.4971 | 0.5257 | 0.4863 |
 
 2-layer best checkpoints（最佳 checkpoints）：
 
@@ -426,13 +429,22 @@ Validation summary（2-layer 已完成）：
 - 训练步数: 54,000。
 - 训练耗时: 8,195.6 秒。
 
+4-layer best checkpoints（最佳 checkpoints）：
+
+- `best_head.pt`: epoch 5，mean primary expected alignment `0.5511`。
+- `best_embedding.pt`: epoch 32，embedding mean primary expected alignment `0.5822`。
+- `best.pt`: compatibility path，与 `best_head.pt` 相同。
+- 训练步数: 54,000。
+- 训练耗时: 8,019.6 秒。
+
 解读：
 
 - 扩大 hard-label 数据和训练轮次明显改善了 embedding diagnostic：best embedding 从 hardlabel100 multi-metric 的 `0.5352` 提升到 `0.6063`。
 - 2-layer metric heads 没有超过 hardlabel100 attention head best：`0.5651` vs `0.5657`，说明 head objective 仍是瓶颈。
 - `best_embedding.pt` 在三项 primary metrics 上都超过 mean-pooled register baseline，但 mean `0.6063` 仍低于严格 single-checkpoint gate target 约 `0.6200`。
-- 最好点出现在 epoch 29；后续训练有回落，final head 只有 `0.4571`，final embedding 为 `0.5981`。因此 early stopping/checkpoint selection 仍必要。
-- 当前 2-layer 结果不改变 `0004` 的保守 fallback 决策；4-layer run 继续用于测试更深 attention 是否能把 unified embedding 推过 `0.62`。
+- 4-layer 没有超过 2-layer：best embedding `0.5822`，best head `0.5511`。更深 attention 在这个设置下没有带来更好 held-out alignment。
+- 2-layer 最好点出现在 epoch 29，4-layer head 最好点出现在 epoch 5，后续训练均有回落。early stopping/checkpoint selection 仍必要。
+- 当前 scale-up 不改变 `0004` 的保守 fallback 决策。可保留 hardlabel300 2-layer `best_embedding.pt` 作为目前最强 single unified learned-readout artifact，但它仍未通过约 `0.62` 的 strict target。
 
 ## 决策日志
 
@@ -445,3 +457,4 @@ Validation summary（2-layer 已完成）：
 - 2026-06-08: 跑完 all-ratio single-target attention ablations；metric heads 仍一般（mean `0.5308`），但 single-target embeddings 很强（mean best alignment `0.6330`），因此下一步优先做 explicit embedding checkpointing。
 - 2026-06-08: 添加 explicit `best_head.pt` 和 `best_embedding.pt` checkpointing，重跑 all-ratio single-target checkpoint checks，并以 retained per-target embedding checkpoint set 的 `0.6210` mean expected alignment 停止该分支。
 - 2026-06-08: 扩大到 `hardlabel300_full100_80` 后跑完 2-layer attention multi-metric 40 epochs；best embedding 达到 `0.6063`，明显优于 hardlabel100 multi-metric embedding diagnostic，但仍未通过 single unified checkpoint 的 `0.62` 目标。4-layer 对照继续运行。
+- 2026-06-08: 跑完 4-layer attention multi-metric 对照；best embedding 为 `0.5822`，低于 2-layer `0.6063`。本轮四步实验走完，结论是数据扩展有用，但加深 attention 没有进一步提升。

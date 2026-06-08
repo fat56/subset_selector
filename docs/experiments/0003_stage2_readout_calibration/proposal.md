@@ -4,7 +4,7 @@
 
 - 实验 ID: `0003_stage2_readout_calibration`
 - 阶段: `stage2`
-- 状态: hardlabel300 scale-up 正在进行；2-layer attention 已完成，4-layer attention 正在训练
+- 状态: hardlabel300 scale-up 已完成；2-layer attention 提升 embedding，4-layer attention 未进一步改善
 - 创建日期: 2026-06-07
 - Config: 已用 `hardlabel100_full100_80` 实现
 - 依赖: `0001_stage1_register_quality_gate`, `0002_ltm30_pose_depth_validation`
@@ -128,20 +128,22 @@ checkpointing follow-up 增加了显式 `best_head.pt` 和 `best_embedding.pt` �
 | Hard native label rows | 3,600 |
 | Primary metrics | pose rotation / pointmap RMSE / depth log RMSE |
 
-2-layer attention multi-metric 已完成 40 epochs。结果显示数据扩展对 embedding diagnostic 有明确帮助，但还没有产出可直接 promotion 的 single unified checkpoint：
+2-layer 和 4-layer attention multi-metric 都已完成 40 epochs。结果显示数据扩展对 embedding diagnostic 有明确帮助，但加深到 4-layer 没有进一步改善，也还没有产出可直接 promotion 的 single unified checkpoint：
 
 | 方法 | Head mean alignment | Embedding mean alignment |
 |---|---:|---:|
 | `hardlabel100_attention_multimetric` | 0.5657 | 0.5352 |
 | `hardlabel300_attention_multimetric_2layer` | 0.5651 | 0.6063 |
+| `hardlabel300_attention_multimetric_4layer` | 0.5511 | 0.5822 |
 
 关键判断：
 
 - `best_embedding.pt` 达到 `0.6063`，明显高于 hardlabel100 multi-metric embedding diagnostic。
 - 三项 embedding alignment 分别为 pose `0.6019`、pointmap `0.5829`、depth `0.6343`，都超过 mean-pooled register baseline 的对应项。
 - metric heads 没有改善，best head `0.5651` 与 hardlabel100 head `0.5657` 基本持平。
+- 4-layer best embedding 为 `0.5822`，低于 2-layer 的 `0.6063`；best head `0.5511` 也低于 2-layer。
 - final checkpoint 低于 best checkpoint，说明继续加 epoch 会产生过拟合/漂移，必须依赖 validation-selected checkpoint。
-- 当前仍低于 single unified checkpoint 的 strict target 约 `0.6200`，因此已继续启动 4-layer attention 对照。
+- 当前仍低于 single unified checkpoint 的 strict target 约 `0.6200`。`0004` 继续使用 mean-pooled register cosine 作为保守 single-objective fallback；若要使用 learned readout，优先考虑 metric-specific embedding checkpoint set 或先做 embedding-combination evaluation。
 
 ### External GT 注意事项
 
