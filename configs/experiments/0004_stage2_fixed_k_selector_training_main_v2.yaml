@@ -1,0 +1,52 @@
+experiment:
+  id: 0004_stage2_fixed_k_selector_training
+  run_id: main_v2_baseline_rank_selector
+  title: Stage 2 fixed-ratio selector main_v2 baseline-aware training
+  stage: stage2
+  status: running
+  created: 2026-06-08
+
+question: Can the fixed-ratio selector learn a 20% policy that matches or beats uniform/random cache-only proxy baselines?
+
+inherits:
+  manifest: docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json
+  compact_cache_root: caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512
+  reason: Reuse main_v1 compact selector features; do not rebuild VGGT cache.
+
+selector:
+  run_dir: runs/0004_stage2_fixed_k_selector_training/main_v2_baseline_rank_selector
+  input_feature_dim: 8193
+  hidden_dim: 512
+  num_layers: 4
+  num_heads: 8
+  dropout: 0.1
+  ratio: 0.20
+  differentiable_mask: bounded_sigmoid_soft_topk
+  temperature_start: 0.7
+  temperature_end: 0.2
+
+training:
+  train_devices: [cuda:0, cuda:1]
+  epochs: 20
+  batch_size: 16
+  lr: 0.0001
+  weight_decay: 0.0001
+  objective: baseline_rank
+  weights:
+    positive_cosine: 0.2
+    symmetric_nce: 0.0
+    rank_margin: 1.0
+    uniform_target_ce: 0.2
+  rank_margin: 0.005
+  num_workers: 4
+
+evaluation:
+  primary_metric: val_hard_minus_uniform
+  secondary_metrics:
+    - val_hard_proxy_cosine
+    - val_hard_minus_random
+    - soft_hard_gap
+  promotion_rule:
+    - learned_topk_mean_hard_proxy_cosine >= uniform_stride_mean_hard_proxy_cosine
+    - learned_topk_mean_hard_proxy_cosine > random_mean_hard_proxy_cosine
+    - soft_hard_gap <= 0.005

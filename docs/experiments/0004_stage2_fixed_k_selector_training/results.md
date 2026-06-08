@@ -84,3 +84,20 @@ Total: `2138` scenes, `105204` sampled frames。
 ## Decision
 
 Do not promote `main_v1_meanpool_selector` to hard subset VGGT or FastGS/3DGS validation yet. The framework is usable, but this objective/baseline result says mean-pooled register cosine alone is too weak as a selector training target. Recommended next step is a `main_v2` objective: add uniform/random/k-center baseline ranking, or distill from `0003` hard native labels / metric-specific learned readout evidence.
+
+## Run: `main_v2_baseline_rank_selector`
+
+- Status: planned / smoke passed.
+- Config: `configs/experiments/0004_stage2_fixed_k_selector_training_main_v2.yaml`
+- Cache: reuse `caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512/`
+- Run dir: `runs/0004_stage2_fixed_k_selector_training/main_v2_baseline_rank_selector/`
+- Objective: baseline-aware rank objective with uniform target CE。
+- Budget: `20%` ratio。
+
+1-epoch smoke on full manifest:
+
+| Epoch | Val Soft Cosine | Val Hard Proxy Cosine | Uniform Proxy | Random Proxy | Hard - Uniform | Hard - Random |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.999021 | 0.998906 | 0.999042 | 0.993662 | -0.000137 | 0.005243 |
+
+Interpretation: smoke already recovers near-uniform coverage and beats random on the cache-only proxy. Full 20-epoch run is needed to see whether it can cross uniform rather than merely imitate it.

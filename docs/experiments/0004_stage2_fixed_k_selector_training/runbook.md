@@ -145,6 +145,52 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_
 
 当前 `main_v1` 的 val proxy 对照显示 learned topK 低于 uniform/random，因此不进入 hard subset VGGT 或 FastGS/3DGS 验算。
 
+## Main V2 Baseline-Rank Run
+
+`main_v2` 复用 `main_v1` compact cache，不重新跑 VGGT：
+
+```bash
+mkdir -p runs/0004_stage2_fixed_k_selector_training/main_v2_baseline_rank_selector
+
+tmux new-session -d -s selector0004_main_v2 '
+cd /home/m/project/ltm/selector &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_selector_training.py \
+  --manifest docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json \
+  --cache-root caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512 \
+  --run-dir runs/0004_stage2_fixed_k_selector_training/main_v2_baseline_rank_selector \
+  --skip-cache \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 20 \
+  --batch-size 16 \
+  --num-workers 4 \
+  --objective baseline_rank \
+  --pos-weight 0.2 \
+  --nce-weight 0.0 \
+  --rank-weight 1.0 \
+  --uniform-ce-weight 0.2 \
+  --rank-margin 0.005 \
+  --temperature-start 0.7 \
+  --temperature-end 0.2 \
+  2>&1 | tee runs/0004_stage2_fixed_k_selector_training/main_v2_baseline_rank_selector/tmux.log
+'
+```
+
+训练后评估：
+
+```bash
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_stage2_selector_proxy.py \
+  --feature-index runs/0004_stage2_fixed_k_selector_training/main_v2_baseline_rank_selector/feature_index.json \
+  --checkpoint runs/0004_stage2_fixed_k_selector_training/main_v2_baseline_rank_selector/best_margin.pt \
+  --out runs/0004_stage2_fixed_k_selector_training/main_v2_baseline_rank_selector/proxy_eval.json \
+  --split val \
+  --ratio 0.20 \
+  --batch-size 16 \
+  --num-workers 4 \
+  --device cuda:0
+```
+
+`main_v2` 的 primary diagnostic 是 `hard_minus_uniform`。只有 learned topK 至少达到 uniform stride，才值得进入 hard subset VGGT rerun。
+
 ## 判断口径
 
 本轮只判断 selector 是否值得进入 hard validation：

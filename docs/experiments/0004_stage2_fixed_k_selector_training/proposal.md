@@ -65,6 +65,32 @@ Split 和帧数：
 - Compact feature runner: `src/vggt_omega_selector/tools/vggt_selector_feature_runner.py`
 - Selector model: `src/vggt_omega_selector/selectors/models.py`
 
+## Main V2 实施方案
+
+`main_v1` 已验证工程链路可用，但 val proxy 对照显示 learned topK `0.969982` 低于 uniform stride `0.999042` 和 random `0.993221`。因此 `main_v2` 不重建 VGGT cache，而是复用 `main_v1_features512`，只更换 selector objective。
+
+`main_v2` 目标：
+
+- 先让 learned topK 至少接近或超过 uniform/random proxy baseline。
+- 把 `val_hard_minus_uniform` 作为 primary diagnostic。
+- 仍然不进入 hard subset VGGT 或 FastGS/3DGS，除非 cache-only proxy 先过关。
+
+Objective:
+
+```text
+L = 0.2 * L_pos
+  + 1.0 * L_rank_to_best_baseline
+  + 0.2 * L_uniform_target_ce
+```
+
+其中：
+
+- `L_pos`: soft selected register embedding 对 full mean-register embedding 的 positive cosine loss。
+- `L_rank_to_best_baseline`: 要求 learned soft cosine 至少达到 `max(uniform, random) + 0.005`。
+- `L_uniform_target_ce`: 用 uniform stride 的 selected positions 作为 coverage teacher，防止 selector 学出明显差的覆盖模式。
+
+`main_v2` 不是最终 selector objective，而是一个 baseline-aware sanity step。如果它只能模仿 uniform，说明 mean-register proxy 上限有限；如果它稳定超过 uniform，再进入 hard subset VGGT 或引入更强 hard-label/learned-readout signal。
+
 ## Recommended Architecture
 
 ### High-Level Flow

@@ -55,5 +55,22 @@ Proxy baseline on val:
 ## Next Actions
 
 - 保留 `main_v1` 作为 framework/proxy negative result。
-- 设计 `main_v2`：把 uniform/random/register-k-center 作为 ranking baseline，或引入 `0003` hard native label / learned-readout auxiliary。
+- 跑 `main_v2_baseline_rank_selector`：复用 `main_v1` compact cache，用 uniform/random baseline-aware objective 训练。
 - 对 `main_v2` 先跑同样 cache-only proxy baseline，只有超过 uniform/random 后再进入 hard subset VGGT rerun。
+
+## Main V2 Plan
+
+`main_v2` 先不引入新的 VGGT cache 或 3DGS 验算。它只回答一个更小的问题：learned selector 能不能在 mean-register proxy 上至少追平 uniform/random。
+
+训练目标：
+
+- `0.2 * L_pos`
+- `1.0 * L_rank_to_best(uniform, random)`
+- `0.2 * L_uniform_target_ce`
+- `rank_margin = 0.005`
+
+Promotion gate:
+
+- learned topK mean hard proxy cosine `>=` uniform stride。
+- learned topK mean hard proxy cosine `>` random 20%。
+- soft-hard gap `<= 0.005`。

@@ -41,7 +41,12 @@ class SelectorTrainConfig:
     ratio: float = 0.20
     temperature_start: float = 1.0
     temperature_end: float = 0.2
+    objective: str = "meanpool"
+    pos_weight: float = 1.0
     nce_weight: float = 0.2
+    rank_weight: float = 0.0
+    uniform_ce_weight: float = 0.0
+    rank_margin: float = 0.0
     num_workers: int = 2
     eval_every_epochs: int = 1
 
@@ -72,7 +77,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ratio", type=float, default=0.20)
     parser.add_argument("--temperature-start", type=float, default=1.0)
     parser.add_argument("--temperature-end", type=float, default=0.2)
+    parser.add_argument("--objective", choices=["meanpool", "baseline_rank"], default="meanpool")
+    parser.add_argument("--pos-weight", type=float, default=1.0)
     parser.add_argument("--nce-weight", type=float, default=0.2)
+    parser.add_argument("--rank-weight", type=float, default=0.0)
+    parser.add_argument("--uniform-ce-weight", type=float, default=0.0)
+    parser.add_argument("--rank-margin", type=float, default=0.0)
     parser.add_argument("--num-workers", type=int, default=2)
     args = parser.parse_args(argv)
 
@@ -124,7 +134,12 @@ def main(argv: list[str] | None = None) -> int:
         ratio=args.ratio,
         temperature_start=args.temperature_start,
         temperature_end=args.temperature_end,
+        objective=args.objective,
+        pos_weight=args.pos_weight,
         nce_weight=args.nce_weight,
+        rank_weight=args.rank_weight,
+        uniform_ce_weight=args.uniform_ce_weight,
+        rank_margin=args.rank_margin,
         num_workers=args.num_workers,
     )
     train_selector(config)
@@ -353,6 +368,7 @@ def train_selector(config: SelectorTrainConfig) -> dict[str, Any]:
     step = 0
     best_soft = -1.0
     best_hard = -1.0
+    best_margin = -float("inf")
     started = time.time()
     config.run_dir.mkdir(parents=True, exist_ok=True)
     (config.run_dir / "train_config.json").write_text(json.dumps(asdict(config), default=str, indent=2) + "\n", encoding="utf-8")
@@ -362,7 +378,7 @@ def train_selector(config: SelectorTrainConfig) -> dict[str, Any]:
         temperature = interpolate(config.temperature_start, config.temperature_end, epoch, config.epochs)
         for batch in train_loader:
             step += 1
-            loss, stats = selector_loss(model, batch, device, config.ratio, temperature, config.nce_weight)
+            loss, stats = selector_loss(model, batch, device, config, temperature, step)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -382,7 +398,11 @@ def train_selector(config: SelectorTrainConfig) -> dict[str, Any]:
                             "temperature": round(float(temperature), 4),
                             "soft_cosine": round(stats["soft_cosine"], 6),
                             "hard_proxy_cosine": round(stats["hard_proxy_cosine"], 6),
+                            "uniform_proxy_cosine": round(stats["uniform_proxy_cosine"], 6),
+                            "hard_minus_uniform": round(stats["hard_minus_uniform"], 6),
                             "nce_loss": round(stats["nce_loss"], 6),
+                            "rank_loss": round(stats["rank_loss"], 6),
+                            "uniform_ce_loss": round(stats["uniform_ce_loss"], 6),
                             "steps_per_sec": round(steps_per_sec, 4),
                             "eta_sec": round(eta, 1),
                         }
@@ -399,6 +419,9 @@ def train_selector(config: SelectorTrainConfig) -> dict[str, Any]:
             if metrics["hard_proxy_cosine"] > best_hard:
                 best_hard = metrics["hard_proxy_cosine"]
                 save_checkpoint(config.run_dir / "best_hard_proxy.pt", model, config, epoch, step, metrics)
+            if metrics.get("hard_minus_uniform", -float("inf")) > best_margin:
+                best_margin = metrics["hard_minus_uniform"]
+                save_checkpoint(config.run_dir / "best_margin.pt", model, config, epoch, step, metrics)
             save_checkpoint(config.run_dir / "last.pt", model, config, epoch, step, metrics)
 
     summary = {
@@ -407,6 +430,8 @@ def train_selector(config: SelectorTrainConfig) -> dict[str, Any]:
         "elapsed_sec": round(time.time() - started, 2),
         "best_soft_cosine": best_soft,
         "best_hard_proxy_cosine": best_hard,
+        "best_hard_minus_uniform": best_margin,
+        "objective": config.objective,
     }
     (config.run_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"event": "done", **summary}), flush=True)
@@ -417,29 +442,56 @@ def selector_loss(
     model: nn.Module,
     batch: dict[str, Any],
     device: torch.device,
-    ratio: float,
+    config: SelectorTrainConfig,
     temperature: float,
-    nce_weight: float,
+    step: int,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     features = batch["features"].to(device, non_blocking=True)
     register_mean = batch["register_mean"].to(device, non_blocking=True)
     frame_mask = batch["frame_mask"].to(device, non_blocking=True)
     full_embedding = F.normalize(batch["full_embedding"].to(device, non_blocking=True), dim=-1)
     scores = model(features, frame_mask)
-    k = fixed_k(frame_mask, ratio)
+    k = fixed_k(frame_mask, config.ratio)
     soft_mask = soft_topk_mask(scores, frame_mask, k, temperature)
     z_soft = aggregate_register(register_mean, soft_mask)
-    pos_loss = (1.0 - F.cosine_similarity(z_soft, full_embedding, dim=-1)).mean()
-    nce = symmetric_nce(z_soft, full_embedding) if nce_weight > 0 else torch.zeros((), device=device)
-    loss = pos_loss + nce_weight * nce
+    soft_cosine = F.cosine_similarity(z_soft, full_embedding, dim=-1)
+    pos_loss = (1.0 - soft_cosine).mean()
+    nce = symmetric_nce(z_soft, full_embedding) if config.nce_weight > 0 else torch.zeros((), device=device)
+
+    uniform = uniform_mask(frame_mask, k)
+    random = random_mask(frame_mask, k, seed=step)
+    z_uniform = aggregate_register(register_mean, uniform)
+    z_random = aggregate_register(register_mean, random)
+    uniform_cosine = F.cosine_similarity(z_uniform, full_embedding, dim=-1)
+    random_cosine = F.cosine_similarity(z_random, full_embedding, dim=-1)
+
+    if config.objective == "baseline_rank":
+        baseline_target = torch.maximum(uniform_cosine, random_cosine).detach()
+        rank_loss = F.relu(baseline_target + config.rank_margin - soft_cosine).mean()
+        uniform_ce = topk_target_cross_entropy(scores, frame_mask, uniform, k)
+    else:
+        rank_loss = torch.zeros((), device=device)
+        uniform_ce = torch.zeros((), device=device)
+
+    loss = (
+        config.pos_weight * pos_loss
+        + config.nce_weight * nce
+        + config.rank_weight * rank_loss
+        + config.uniform_ce_weight * uniform_ce
+    )
 
     with torch.no_grad():
         hard_mask = hard_topk_mask(scores, frame_mask, k)
         z_hard = aggregate_register(register_mean, hard_mask)
+        hard_cosine = F.cosine_similarity(z_hard, full_embedding, dim=-1)
         stats = {
-            "soft_cosine": float(F.cosine_similarity(z_soft, full_embedding, dim=-1).mean().item()),
-            "hard_proxy_cosine": float(F.cosine_similarity(z_hard, full_embedding, dim=-1).mean().item()),
+            "soft_cosine": float(soft_cosine.mean().item()),
+            "hard_proxy_cosine": float(hard_cosine.mean().item()),
+            "uniform_proxy_cosine": float(uniform_cosine.mean().item()),
+            "hard_minus_uniform": float((hard_cosine - uniform_cosine).mean().item()),
             "nce_loss": float(nce.item()),
+            "rank_loss": float(rank_loss.item()),
+            "uniform_ce_loss": float(uniform_ce.item()),
         }
     return loss, stats
 
@@ -448,9 +500,11 @@ def evaluate_selector(model: nn.Module, loader: DataLoader[Any], device: torch.d
     model.eval()
     soft_values = []
     hard_values = []
+    uniform_values = []
+    random_values = []
     selected_fracs = []
     with torch.inference_mode():
-        for batch in loader:
+        for batch_index, batch in enumerate(loader):
             features = batch["features"].to(device, non_blocking=True)
             register_mean = batch["register_mean"].to(device, non_blocking=True)
             frame_mask = batch["frame_mask"].to(device, non_blocking=True)
@@ -459,14 +513,27 @@ def evaluate_selector(model: nn.Module, loader: DataLoader[Any], device: torch.d
             k = fixed_k(frame_mask, ratio)
             soft_mask = soft_topk_mask(scores, frame_mask, k, temperature=0.2)
             hard_mask = hard_topk_mask(scores, frame_mask, k)
+            uniform = uniform_mask(frame_mask, k)
+            random = random_mask(frame_mask, k, seed=batch_index)
             z_soft = aggregate_register(register_mean, soft_mask)
             z_hard = aggregate_register(register_mean, hard_mask)
+            z_uniform = aggregate_register(register_mean, uniform)
+            z_random = aggregate_register(register_mean, random)
             soft_values.extend(F.cosine_similarity(z_soft, full_embedding, dim=-1).detach().cpu().tolist())
             hard_values.extend(F.cosine_similarity(z_hard, full_embedding, dim=-1).detach().cpu().tolist())
+            uniform_values.extend(F.cosine_similarity(z_uniform, full_embedding, dim=-1).detach().cpu().tolist())
+            random_values.extend(F.cosine_similarity(z_random, full_embedding, dim=-1).detach().cpu().tolist())
             selected_fracs.extend((k.float() / frame_mask.sum(dim=1).float()).detach().cpu().tolist())
+    hard_mean = float(sum(hard_values) / len(hard_values))
+    uniform_mean = float(sum(uniform_values) / len(uniform_values))
+    random_mean = float(sum(random_values) / len(random_values))
     return {
         "soft_cosine": float(sum(soft_values) / len(soft_values)),
-        "hard_proxy_cosine": float(sum(hard_values) / len(hard_values)),
+        "hard_proxy_cosine": hard_mean,
+        "uniform_proxy_cosine": uniform_mean,
+        "random_proxy_cosine": random_mean,
+        "hard_minus_uniform": hard_mean - uniform_mean,
+        "hard_minus_random": hard_mean - random_mean,
         "soft_hard_gap": float((sum(soft_values) - sum(hard_values)) / len(soft_values)),
         "mean_selected_fraction": float(sum(selected_fracs) / len(selected_fracs)),
         "val_rows": len(soft_values),
@@ -482,6 +549,47 @@ def aggregate_register(register_mean: torch.Tensor, mask: torch.Tensor) -> torch
     denom = mask.sum(dim=1, keepdim=True).clamp_min(1e-6)
     pooled = (register_mean * mask[..., None]).sum(dim=1) / denom
     return F.normalize(pooled, dim=-1)
+
+
+def uniform_mask(frame_mask: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+    out = torch.zeros_like(frame_mask, dtype=torch.float32)
+    counts = frame_mask.sum(dim=1).long()
+    for row in range(frame_mask.shape[0]):
+        n = int(counts[row].item())
+        count = max(1, min(int(k[row].item()), n))
+        if count == 1:
+            indices = [0]
+        else:
+            indices = sorted({round(i * (n - 1) / (count - 1)) for i in range(count)})
+            fill = 0
+            while len(indices) < count:
+                if fill not in indices:
+                    indices.append(fill)
+                fill += 1
+            indices = sorted(indices[:count])
+        out[row, torch.tensor(indices, device=frame_mask.device)] = 1.0
+    return out
+
+
+def random_mask(frame_mask: torch.Tensor, k: torch.Tensor, seed: int) -> torch.Tensor:
+    out = torch.zeros_like(frame_mask, dtype=torch.float32)
+    counts = frame_mask.sum(dim=1).long()
+    for row in range(frame_mask.shape[0]):
+        n = int(counts[row].item())
+        count = max(1, min(int(k[row].item()), n))
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed((seed + 1) * 1_000_003 + row)
+        indices = torch.randperm(n, generator=generator)[:count].to(device=frame_mask.device)
+        out[row, indices] = 1.0
+    return out
+
+
+def topk_target_cross_entropy(scores: torch.Tensor, frame_mask: torch.Tensor, target_mask: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+    valid = frame_mask.to(dtype=torch.bool, device=scores.device)
+    masked_scores = scores.masked_fill(~valid, torch.finfo(scores.dtype).min)
+    log_probs = torch.log_softmax(masked_scores, dim=1)
+    target_probs = target_mask.to(dtype=scores.dtype, device=scores.device) / k.to(dtype=scores.dtype, device=scores.device).unsqueeze(1).clamp_min(1.0)
+    return -(target_probs * log_probs.masked_fill(~valid, 0.0)).sum(dim=1).mean()
 
 
 def symmetric_nce(z_soft: torch.Tensor, z_full: torch.Tensor, temperature: float = 0.07) -> torch.Tensor:
