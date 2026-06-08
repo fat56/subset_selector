@@ -1,0 +1,31 @@
+# Stage 2.0 Hard-Label Readout Manifest 摘要
+
+- 创建日期: 2026-06-08
+- 数据根目录: `/home/m/dataset/ltm_datasets`
+- 入选 scenes: 300
+- WildRGBD scenes 数量: 150
+- DL3DV scenes 数量: 150
+- Full frames: WildRGBD 100, DL3DV 80
+- Hard subset jobs 数量: 3600
+- VGGT cache jobs 总数: 3900
+- Random seed: 20260608（固定随机种子）
+- 排除的 validation scenes: 30
+
+## 入选 Scene 统计
+
+| Dataset | 数量 |
+|---|---:|
+| DL3DV-ALL-480P | 150 |
+| wildrgbd_harrison | 150 |
+
+## Subset 方法
+
+- `random20_seed000` ... `random20_seed004`
+- `random50_seed000` ... `random50_seed002`
+- `uniform20`, `uniform50`
+- `contiguous20_seed000`, `contiguous50_seed000`
+
+## Label 目标
+
+Hard labels 由每个 subset 的 VGGT-native depth/pose/point-map 输出与 full-view VGGT cache 中同一批图像的输出对比得到。
+训练目标是按 scene 做 z-score 后的 `pose_rotation_mean_deg`、`pointmap_rmse_norm` 和 `depth_log_rmse` 求和。
