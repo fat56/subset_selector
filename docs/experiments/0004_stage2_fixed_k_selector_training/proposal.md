@@ -107,9 +107,9 @@ L = 0.2 * L_pos
 
 | Split | uniform20 | random20 mean | random20 best-of-5 | contiguous20 | oracle labeled candidate |
 |---|---:|---:|---:|---:|---:|
-| train | -0.9045 | 0.6251 | -0.5788 | 5.5092 | -1.0818 |
-| val | -0.9264 | 0.5544 | -0.7103 | 5.5025 | -1.1062 |
-| test | -0.7523 | 0.7196 | -0.4495 | 5.4605 | -1.1033 |
+| train | -0.8582 | 0.6240 | -0.5722 | 5.5037 | -1.0555 |
+| val | -1.0574 | 0.5989 | -0.6834 | 5.5981 | -1.1961 |
+| test | -0.9917 | 0.6833 | -0.5293 | 5.4085 | -1.2233 |
 
 `uniform20` 是强 baseline，但并非 oracle：300 个 scenes 中 `217` 个由 uniform 胜出，`82` 个由某个 random20 胜出，`1` 个由 contiguous20 胜出。因此 `main_v3` 的目标不是简单模仿 uniform，而是在 uniform 不是最佳候选的 scenes 上识别更好的 labeled candidate。
 

@@ -257,6 +257,77 @@ tail -n 60 runs/0004_stage2_fixed_k_selector_training/main_v3_hardnative_candida
 - `learned_regret < uniform_regret` 表示 learned 更接近当前 labeled candidate oracle。
 - `mean_pool_cosine_select_error` 是旧 proxy 的候选选择对照；预检查中它弱于 uniform，不作为 promotion 依据。
 
+Frame-score 对照：
+
+```bash
+mkdir -p runs/0004_stage2_fixed_k_selector_training/main_v3_frame_score_candidate_selector
+
+tmux new-session -d -s selector0004_main_v3_framescore '
+cd /home/m/project/ltm/selector &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_selector_hardnative_candidate_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json \
+  --run-dir runs/0004_stage2_fixed_k_selector_training/main_v3_frame_score_candidate_selector \
+  --candidate-tag 20 \
+  --model-kind frame_score \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 60 \
+  --batch-size 16 \
+  --hidden-dim 512 \
+  --num-layers 4 \
+  --num-heads 8 \
+  --lr 0.0001 \
+  --weight-decay 0.0001 \
+  --rank-weight 1.0 \
+  --ce-weight 0.3 \
+  --min-target-gap 0.02 \
+  --target-gap-scale 1.0 \
+  --log-every-steps 20 \
+  2>&1 | tee runs/0004_stage2_fixed_k_selector_training/main_v3_frame_score_candidate_selector/tmux.log
+'
+```
+
+Rank-only small `candidate_set` 对照：
+
+```bash
+mkdir -p runs/0004_stage2_fixed_k_selector_training/main_v3_rankonly_small_candidate_selector_cuda0
+
+tmux new-session -d -s selector0004_main_v3_ranksmall0 '
+cd /home/m/project/ltm/selector &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_selector_hardnative_candidate_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json \
+  --run-dir runs/0004_stage2_fixed_k_selector_training/main_v3_rankonly_small_candidate_selector_cuda0 \
+  --candidate-tag 20 \
+  --model-kind candidate_set \
+  --train-devices cuda:0 \
+  --epochs 60 \
+  --batch-size 16 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 4 \
+  --dropout 0.2 \
+  --lr 0.00005 \
+  --weight-decay 0.001 \
+  --rank-weight 1.0 \
+  --ce-weight 0.0 \
+  --min-target-gap 0.05 \
+  --target-gap-scale 1.0 \
+  --log-every-steps 20 \
+  2>&1 | tee runs/0004_stage2_fixed_k_selector_training/main_v3_rankonly_small_candidate_selector_cuda0/tmux.log
+'
+```
+
+Gate/ensemble 扫描：
+
+```bash
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_stage2_selector_hardnative_gate.py \
+  --device cuda:0 \
+  --out runs/0004_stage2_fixed_k_selector_training/main_v3_hardnative_candidate_selector/ensemble_gate_scan.json
+```
+
+这个扫描只用于 post-hoc calibration diagnostic。promotion 只能看按 val 选出的 gate 在 test 上是否仍为正；不能用 test oracle scan 作为真实 selector 结果。
+
 ## 判断口径
 
 本轮只判断 selector 是否值得进入 hard validation：

@@ -121,7 +121,26 @@ Smoke 已通过 30 scenes / 1 epoch：
 - threshold fallback 在 val 上可把提升推到 `+0.0273`，但 test 更差；test 上最优阈值是永远不偏离 uniform。
 - 当前风险不是训练轮次不足，而是模型对“何时偏离 uniform”不够可靠。
 
-下一步：
+已完成的对照：
 
-- 跑 `frame_score` 对照，确认逐帧 selector 是否比 `candidate_set` 更保守、泛化更好。
-- 如果 `frame_score` 仍失败，则改成 uniform-gated objective：默认选择 uniform，只对有足够 label margin 的 non-uniform oracle 学二分类门控，而不是对所有候选做多类 oracle CE。
+| Run | Val `uniform_minus_learned_error` | Test `uniform_minus_learned_error` | 结论 |
+|---|---:|---:|---|
+| `candidate_set` 4-layer | +0.0101 | -0.2557 | 能拟合 train/val，但 test 不泛化 |
+| `frame_score` 4-layer | 0.0000 | 0.0000 | 最优 checkpoint 等价于 uniform，没有正提升 |
+| `rankonly` 2-layer | +0.0162 | -0.3091 | val 稍好，但 test 更差 |
+| post-hoc gate, best by val | +0.0273 | -0.2869 | val gate 不能转移到 test |
+| post-hoc gate, test oracle scan | 0.0000 | 0.0000 | test 上最优规则是不偏离 uniform |
+
+当前结论：
+
+- `main_v3` 的 hard-native supervision 是有效的：pairwise ranking 在 val/test 都不是随机，train 也能到 oracle top1。
+- 现有 `hardlabel300` + `7` candidates/scene 不足以学出可靠 selector。模型能发现少量有利 deviation，但无法校准“什么时候不要偏离 uniform”。
+- 继续在这批 labels 上增加训练轮次、简单加层或换成逐帧 scorer，已经看不到 promotion 价值。
+- 当前最可靠的 fixed-K selector 仍是 `uniform20` fallback。
+
+下一步应改数据和任务定义，而不是继续微调同一 run：
+
+- 扩大 hard-native label 到至少 `1000` scenes，val/test 各保留不少于 `100` scenes，降低 30-scene split 的偶然性。
+- 增加候选族：更多 random seeds、uniform jitter、register/DINO feature k-center、motion/pose-spread k-center，以及不同 `K` 比例。
+- 把目标改成 calibrated uniform-gated selector：默认输出 uniform，仅当 non-uniform oracle 相对 uniform 有足够 margin 时学习二分类 gate 和候选选择。
+- promotion gate 维持不变：按 val 选出的策略必须在 held-out test 上 `uniform_minus_learned_error > 0`，否则不进入 hard subset VGGT rerun 或 3DGS/FastGS。

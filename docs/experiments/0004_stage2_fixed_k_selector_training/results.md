@@ -145,9 +145,9 @@ Precheck on all 300 labeled scenes:
 
 | Split | uniform20 | random20 mean | random20 best-of-5 | contiguous20 | oracle labeled candidate |
 |---|---:|---:|---:|---:|---:|
-| train | -0.9045 | 0.6251 | -0.5788 | 5.5092 | -1.0818 |
-| val | -0.9264 | 0.5544 | -0.7103 | 5.5025 | -1.1062 |
-| test | -0.7523 | 0.7196 | -0.4495 | 5.4605 | -1.1033 |
+| train | -0.8582 | 0.6240 | -0.5722 | 5.5037 | -1.0555 |
+| val | -1.0574 | 0.5989 | -0.6834 | 5.5981 | -1.1961 |
+| test | -0.9917 | 0.6833 | -0.5293 | 5.4085 | -1.2233 |
 
 Oracle winner distribution:
 
@@ -157,7 +157,7 @@ Oracle winner distribution:
 | `random20` | 82 |
 | `contiguous20` | 1 |
 
-Interpretation: `uniform20` is a strong hard-native baseline, but there is measurable headroom: the labeled oracle is lower than uniform, especially on test (`-1.1033` vs `-0.7523`)。
+Interpretation: `uniform20` is a strong hard-native baseline, but there is measurable headroom: the labeled oracle is lower than uniform on every split, including test (`-1.2233` vs `-0.9917`)。
 
 Smoke command: 30 scenes, `candidate_set`, 1 epoch, small 2-layer/256 hidden model, single GPU。
 
@@ -213,3 +213,75 @@ Threshold interpretation:
 - A conservative fallback can improve val from `+0.0101` to `+0.0273` by deviating from uniform on only `10%` of val scenes。
 - The same threshold worsens test, and an oracle scan over thresholds says the best test decision is to never deviate from uniform。
 - Therefore the current learned deviation signal is not reliable enough for selector promotion。
+
+Frame-score control:
+
+- Run dir: `runs/0004_stage2_fixed_k_selector_training/main_v3_frame_score_candidate_selector/`
+- Model: `frame_score`
+- Epochs / steps: `60` / `900`
+- Training elapsed: `55.50` sec。
+- Best checkpoint: `best_uniform_improvement.pt`
+- Best val `uniform_minus_learned_error`: `0.0000`
+
+| Split | Learned Error | Uniform Error | Oracle | Uniform - Learned | Win vs Uniform | Oracle Top1 | Pairwise Acc. |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| train | -0.8582 | -0.8582 | -1.0555 | 0.0000 | 0.0000 | 0.7167 | 0.6912 |
+| val | -1.0574 | -1.0574 | -1.1961 | 0.0000 | 0.0000 | 0.7667 | 0.6820 |
+| test | -0.9917 | -0.9917 | -1.2233 | 0.0000 | 0.0000 | 0.7333 | 0.7186 |
+
+Frame-score interpretation:
+
+- `frame_score` 的 best checkpoint 等价于选择 `uniform20`，没有取得正提升。
+- 训练过程中它多次偏离 uniform 后变差，因此逐帧平均分数不足以表达 fixed-K subset 的 coverage/diversity 关系。
+- 这个结果支持保留 set-aware `candidate_set` 结构，而不是把 selector 简化成每帧独立打分。
+
+Rank-only small candidate-set control:
+
+- Run dir: `runs/0004_stage2_fixed_k_selector_training/main_v3_rankonly_small_candidate_selector_cuda0/`
+- Model: `candidate_set`, `2` layers, hidden `256`, dropout `0.2`
+- Loss: rank-only, `ce_weight = 0.0`, `min_target_gap = 0.05`
+- Train device: `cuda:0`
+- Epochs / steps: `60` / `900`
+- Training elapsed: `38.27` sec。
+- Best val `uniform_minus_learned_error`: `+0.0162`
+
+| Split | Learned Error | Uniform Error | Oracle | Uniform - Learned | Deviation/Win vs Uniform | Oracle Top1 | Pairwise Acc. |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| train | -0.9864 | -0.8582 | -1.0555 | +0.1282 | 0.1375 | 0.8000 | 0.9384 |
+| val | -1.0737 | -1.0574 | -1.1961 | +0.0162 | 0.0333 | 0.8000 | 0.8199 |
+| test | -0.6826 | -0.9917 | -1.2233 | -0.3091 | 0.0000 | 0.6333 | 0.7884 |
+
+Rank-only interpretation:
+
+- 降低容量并去掉 oracle CE 后，val 从 `+0.0101` 提升到 `+0.0162`，但 test 更差。
+- 这个 run 说明问题不是 4-layer 过大这么简单；模型仍然学到了 scene-specific deviation，但没有学到稳定的 held-out calibration。
+- 双卡 `DataParallel` 对这个小模型曾在 initial eval 触发 CUDA kernel error，单卡 `cuda:0` 复跑成功；该问题记录为 runtime quirk，不影响结果判断。
+
+Post-hoc gate/ensemble scan:
+
+- Script: `scripts/evaluate_stage2_selector_hardnative_gate.py`
+- Output: `runs/0004_stage2_fixed_k_selector_training/main_v3_hardnative_candidate_selector/ensemble_gate_scan.json`
+- Inputs: 4-layer `candidate_set` best checkpoint + 2-layer rank-only checkpoint。
+- Rules scanned: single-model uniform fallback and two-model agreement fallback。
+
+| Gate selection | Split | Learned Error | Uniform Error | Oracle | Uniform - Learned | Deviation Rate | Win vs Uniform | Oracle Top1 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| best by val, all thresholds | val | -1.0847 | -1.0574 | -1.1961 | +0.0273 | 0.1000 | 0.0667 | 0.8000 |
+| best by val, all thresholds | test | -0.7049 | -0.9917 | -1.2233 | -0.2869 | 0.2333 | 0.0333 | 0.6000 |
+| best by val, positive-margin only | val | -1.0737 | -1.0574 | -1.1961 | +0.0162 | 0.0667 | 0.0333 | 0.8000 |
+| best by val, positive-margin only | test | -0.6826 | -0.9917 | -1.2233 | -0.3091 | 0.1667 | 0.0000 | 0.6333 |
+| best by test oracle scan | val | -1.0574 | -1.0574 | -1.1961 | 0.0000 | 0.0000 | 0.0000 | 0.7667 |
+| best by test oracle scan | test | -0.9917 | -0.9917 | -1.2233 | 0.0000 | 0.0000 | 0.0000 | 0.7333 |
+
+Gate interpretation:
+
+- 按 val 自动选择 gate，最高 val 提升可到 `+0.0273`，但 test 仍明显为负。
+- 限制为 positive-margin gate 后，结果退化到 rank-only checkpoint 本身：val `+0.0162`，test `-0.3091`。
+- 对 test 做 oracle threshold scan 时，最优规则是完全不偏离 uniform，即 `uniform_minus_learned_error = 0.0000`。
+- 因此现有 hardlabel300 / 7-candidate 训练路线没有得到可 promotion 的 selector；当前最可靠 selector 仍是 `uniform20` fallback。
+
+## Current Decision
+
+Do not promote 0004 selector to hard subset VGGT rerun or downstream 3DGS/FastGS validation yet.
+
+The useful result is a negative boundary: `candidate_set` can fit hard-native candidate ranking and finds a small validation signal, but this signal does not survive held-out test. Before another training run, 0004 needs a larger hard-native label set and richer candidates: more scenes, more random seeds, uniform jitter, register/DINO k-center, and an explicit calibrated “safe to deviate from uniform” objective。
