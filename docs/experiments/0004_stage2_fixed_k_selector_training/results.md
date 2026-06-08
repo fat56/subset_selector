@@ -132,7 +132,7 @@ Interpretation:
 
 ## Run: `main_v3_hardnative_candidate_selector`
 
-- Status: implementation smoke completed; full run pending。
+- Status: completed; val has a small positive signal, test does not pass。
 - Config: `configs/experiments/0004_stage2_fixed_k_selector_training_main_v3.yaml`
 - Runner: `scripts/run_stage2_selector_hardnative_candidate_training.py`
 - Source labels: `runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv`
@@ -174,3 +174,42 @@ Smoke interpretation:
 - Data loading, image-list mask reconstruction, compact feature cache, training loss, checkpoint save/load, and metric reporting are working。
 - 1-epoch smoke is not a promotion result. It is intentionally too small to judge whether learned beats uniform。
 - The pairwise ranking signal is learnable even in the smoke run: val pairwise accuracy reached `0.8226` after one epoch。
+
+Full run:
+
+- Model: `candidate_set`
+- Epochs / steps: `60` / `900`
+- Training elapsed: `55.83` sec after feature cache。
+- Feature cache: `300` scenes, compact `frame_features` only。
+- Best checkpoint: `best_uniform_improvement.pt`
+- Best epoch / step: `33` / `495`
+- Best val `uniform_minus_learned_error`: `+0.0101`
+
+Best checkpoint metrics:
+
+| Split | Learned Error | Uniform Error | Random Mean | Random Best-of-5 | Oracle | Uniform - Learned | Regret Reduction | Win vs Uniform | Oracle Top1 | Pairwise Acc. |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| train | -1.0555 | -0.8582 | 0.6240 | -0.5722 | -1.0555 | +0.1973 | +0.1973 | 0.2833 | 1.0000 | 0.9682 |
+| val | -1.0675 | -1.0574 | 0.5989 | -0.6834 | -1.1961 | +0.0101 | +0.0101 | 0.0333 | 0.8000 | 0.7854 |
+| test | -0.7360 | -0.9917 | 0.6833 | -0.5293 | -1.2233 | -0.2557 | -0.2557 | 0.0333 | 0.6333 | 0.7765 |
+
+Full-run interpretation:
+
+- `candidate_set` can overfit the training scenes almost perfectly: train oracle top1 reaches `1.0000`。
+- The validation split shows a real but very thin positive window: `uniform_minus_learned_error = +0.0101`。
+- The held-out test split fails clearly: `uniform_minus_learned_error = -0.2557`。
+- Pairwise accuracy stays non-trivial on val/test, but top-level candidate selection is not calibrated enough to safely deviate from `uniform20`。
+
+Uniform-fallback threshold sweep on the same checkpoint:
+
+| Threshold selection | Split | Learned Error | Uniform Error | Oracle | Uniform - Learned | Deviation Rate |
+|---|---|---:|---:|---:|---:|---:|
+| best by val | val | -1.0847 | -1.0574 | -1.1961 | +0.0273 | 0.1000 |
+| best by val | test | -0.7049 | -0.9917 | -1.2233 | -0.2869 | 0.2333 |
+| test oracle scan | test | -0.9917 | -0.9917 | -1.2233 | 0.0000 | 0.0000 |
+
+Threshold interpretation:
+
+- A conservative fallback can improve val from `+0.0101` to `+0.0273` by deviating from uniform on only `10%` of val scenes。
+- The same threshold worsens test, and an oracle scan over thresholds says the best test decision is to never deviate from uniform。
+- Therefore the current learned deviation signal is not reliable enough for selector promotion。

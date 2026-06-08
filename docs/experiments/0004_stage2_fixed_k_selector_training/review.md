@@ -105,4 +105,23 @@ Smoke 已通过 30 scenes / 1 epoch：
 
 - 数据加载、candidate mask 重建、compact feature cache、loss、checkpoint save/load 都正常。
 - 小样本 val pairwise accuracy 达到 `0.8226`，说明 hard-native ranking signal 能被模型读到。
-- smoke 不作为 promotion 结果；下一步需要跑 300 scenes 完整双卡 run，观察 val/test 是否同时超过 uniform。
+- smoke 不作为 promotion 结果。
+
+完整 `candidate_set` run 已完成：
+
+- `60` epochs / `900` steps，训练耗时 `55.83` sec。
+- best checkpoint: epoch `33`, step `495`。
+- train: `uniform_minus_learned_error = +0.1973`, oracle top1 `1.0000`。
+- val: `uniform_minus_learned_error = +0.0101`, oracle top1 `0.8000`。
+- test: `uniform_minus_learned_error = -0.2557`, oracle top1 `0.6333`。
+
+判断：
+
+- 这个模型证明了 hard-native candidate ranking 可以被网络拟合，但泛化不够，不能 promotion。
+- threshold fallback 在 val 上可把提升推到 `+0.0273`，但 test 更差；test 上最优阈值是永远不偏离 uniform。
+- 当前风险不是训练轮次不足，而是模型对“何时偏离 uniform”不够可靠。
+
+下一步：
+
+- 跑 `frame_score` 对照，确认逐帧 selector 是否比 `candidate_set` 更保守、泛化更好。
+- 如果 `frame_score` 仍失败，则改成 uniform-gated objective：默认选择 uniform，只对有足够 label margin 的 non-uniform oracle 学二分类门控，而不是对所有候选做多类 oracle CE。
