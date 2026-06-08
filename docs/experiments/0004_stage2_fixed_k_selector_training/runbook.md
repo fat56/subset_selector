@@ -127,6 +127,24 @@ tail -n 50 runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/
 - `summary.json`: 训练摘要。
 - `train_config.json` 和 `config.json`: 训练参数记录。
 
+## Proxy Baseline Eval
+
+训练后用同一份 compact cache 评估 learned selector 与简单 baselines：
+
+```bash
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_stage2_selector_proxy.py \
+  --feature-index runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/feature_index.json \
+  --checkpoint runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/best_hard_proxy.pt \
+  --out runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/proxy_eval.json \
+  --split val \
+  --ratio 0.20 \
+  --batch-size 16 \
+  --num-workers 4 \
+  --device cuda:0
+```
+
+当前 `main_v1` 的 val proxy 对照显示 learned topK 低于 uniform/random，因此不进入 hard subset VGGT 或 FastGS/3DGS 验算。
+
 ## 判断口径
 
 本轮只判断 selector 是否值得进入 hard validation：
