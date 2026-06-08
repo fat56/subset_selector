@@ -129,3 +129,48 @@ Interpretation:
 - It still does not beat uniform stride: `hard_minus_uniform = -0.000087` at the best checkpoint。
 - The soft-hard gap is tiny (`0.000072`), so the remaining issue is not soft/hard mismatch; it is that the mean-register proxy strongly favors uniform coverage。
 - Do not promote to hard subset VGGT/3DGS on this proxy alone. The next useful step is a stronger objective or evaluator: hard native labels, register-k-center/ranking candidates, or `0003` learned-readout auxiliary.
+
+## Run: `main_v3_hardnative_candidate_selector`
+
+- Status: implementation smoke completed; full run pending。
+- Config: `configs/experiments/0004_stage2_fixed_k_selector_training_main_v3.yaml`
+- Runner: `scripts/run_stage2_selector_hardnative_candidate_training.py`
+- Source labels: `runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv`
+- Source jobs: `runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json`
+- Source token cache: `caches/vggt_omega/0003_stage2_readout_calibration/hardlabel300_full100_80_images512/`
+- Candidate set: `uniform20`、`random20_seed000-004`、`contiguous20_seed000`
+- Metric: hard-native `target_error`，越低越好。
+
+Precheck on all 300 labeled scenes:
+
+| Split | uniform20 | random20 mean | random20 best-of-5 | contiguous20 | oracle labeled candidate |
+|---|---:|---:|---:|---:|---:|
+| train | -0.9045 | 0.6251 | -0.5788 | 5.5092 | -1.0818 |
+| val | -0.9264 | 0.5544 | -0.7103 | 5.5025 | -1.1062 |
+| test | -0.7523 | 0.7196 | -0.4495 | 5.4605 | -1.1033 |
+
+Oracle winner distribution:
+
+| Candidate family | Scenes |
+|---|---:|
+| `uniform20` | 217 |
+| `random20` | 82 |
+| `contiguous20` | 1 |
+
+Interpretation: `uniform20` is a strong hard-native baseline, but there is measurable headroom: the labeled oracle is lower than uniform, especially on test (`-1.1033` vs `-0.7523`)。
+
+Smoke command: 30 scenes, `candidate_set`, 1 epoch, small 2-layer/256 hidden model, single GPU。
+
+Smoke result:
+
+| Split | Learned Error | Uniform Error | Random Mean | Random Best-of-5 | Oracle | Uniform - Learned | Pairwise Acc. |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| train | -0.6294 | -0.6422 | 0.5732 | -0.5983 | -0.8239 | -0.0128 | 0.7440 |
+| val | 0.1603 | -0.2140 | 0.7135 | 0.1498 | -0.3873 | -0.3744 | 0.8226 |
+| test | -1.2483 | -1.2483 | 0.2931 | -0.7226 | -1.2483 | 0.0000 | 0.6667 |
+
+Smoke interpretation:
+
+- Data loading, image-list mask reconstruction, compact feature cache, training loss, checkpoint save/load, and metric reporting are working。
+- 1-epoch smoke is not a promotion result. It is intentionally too small to judge whether learned beats uniform。
+- The pairwise ranking signal is learnable even in the smoke run: val pairwise accuracy reached `0.8226` after one epoch。

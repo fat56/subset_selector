@@ -91,6 +91,44 @@ L = 0.2 * L_pos
 
 `main_v2` 不是最终 selector objective，而是一个 baseline-aware sanity step。如果它只能模仿 uniform，说明 mean-register proxy 上限有限；如果它稳定超过 uniform，再进入 hard subset VGGT 或引入更强 hard-label/learned-readout signal。
 
+## Main V3 实施方案
+
+`main_v2` 的 best checkpoint 已经把 learned topK 拉到接近 uniform：`hard_proxy_cosine = 0.998955`，但仍低于 uniform 的 `0.999042`。更重要的是，这个 proxy 本身对 uniform stride 过于友好，不能充分代表 pose、pointmap、depth 的 native consistency。因此 `main_v3` 直接使用 `0003_stage2_readout_calibration` 产出的 hard-native labels，把训练问题改成同一 scene 内的候选子集 ranking。
+
+数据来源：
+
+- Label: `runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv`
+- Image-list/job map: `runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json`
+- Token cache: `caches/vggt_omega/0003_stage2_readout_calibration/hardlabel300_full100_80_images512`
+- 候选集合：`uniform20`、`random20_seed000-004`、`contiguous20_seed000`
+- Scenes: `300`，其中 DL3DV `150`、WildRGBD `150`
+
+`target_error` 是 `0003` 中由 VGGT-native pseudo-label 得到的组合误差，越低越好。预检查显示：
+
+| Split | uniform20 | random20 mean | random20 best-of-5 | contiguous20 | oracle labeled candidate |
+|---|---:|---:|---:|---:|---:|
+| train | -0.9045 | 0.6251 | -0.5788 | 5.5092 | -1.0818 |
+| val | -0.9264 | 0.5544 | -0.7103 | 5.5025 | -1.1062 |
+| test | -0.7523 | 0.7196 | -0.4495 | 5.4605 | -1.1033 |
+
+`uniform20` 是强 baseline，但并非 oracle：300 个 scenes 中 `217` 个由 uniform 胜出，`82` 个由某个 random20 胜出，`1` 个由 contiguous20 胜出。因此 `main_v3` 的目标不是简单模仿 uniform，而是在 uniform 不是最佳候选的 scenes 上识别更好的 labeled candidate。
+
+第一版模型为 `candidate_set` scorer：
+
+- 输入仍是 full scene 的 per-frame compact VGGT 特征：`camera_token`、`register_mean`、`register_max`、`register_std`、`frame_pos`。
+- 对 full scene 先做 Transformer context encoder。
+- 对每个候选 mask 聚合 selected contextual mean/std，并加入 selected fraction、temporal mean/std/min/max/span。
+- 输出每个候选子集的 score。
+- Loss: same-scene pairwise ranking + oracle candidate cross entropy。
+
+保留 `frame_score` 模式作为对照：它输出每帧 score，候选 score 是 selected frames 的平均 score。若 `frame_score` 明显弱于 `candidate_set`，说明 fixed-K selector 需要 coverage/diversity-aware set scorer，而不是纯逐帧质量排序。
+
+评估口径：
+
+- Primary: `uniform_minus_learned_error = mean(target_error_uniform20) - mean(target_error_learned)`，大于 `0` 表示 learned 比 uniform 更好。
+- Secondary: `learned_regret`、`regret_reduction_vs_uniform`、`win_rate_vs_uniform`、`oracle_top1_rate`、`pairwise_accuracy`。
+- Baselines: `uniform20`、`random20_mean`、`random20_best_of_5`、`contiguous20`、`mean_pool_register_cosine_candidate_select`、`oracle_best_labeled_candidate`。
+
 ## Recommended Architecture
 
 ### High-Level Flow

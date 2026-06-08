@@ -1,0 +1,61 @@
+experiment:
+  id: 0004_stage2_fixed_k_selector_training
+  run_id: main_v3_hardnative_candidate_selector
+  title: Stage 2 fixed-ratio selector main_v3 hard-native candidate ranking
+  stage: stage2
+  status: running
+  created: 2026-06-09
+
+question: Can a fixed-ratio selector use 0003 hard-native labels to pick better 20% candidate subsets than uniform stride?
+
+inputs:
+  labels_csv: runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv
+  cache_jobs_json: runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json
+  token_cache_root: caches/vggt_omega/0003_stage2_readout_calibration/hardlabel300_full100_80_images512
+  note: Reuse 0003 camera/register token caches; do not rebuild VGGT outputs.
+
+selector:
+  run_dir: runs/0004_stage2_fixed_k_selector_training/main_v3_hardnative_candidate_selector
+  candidate_tag: "20"
+  model_kind: candidate_set
+  input_feature_dim: 8193
+  hidden_dim: 512
+  num_layers: 4
+  num_heads: 8
+  dropout: 0.1
+  candidate_features:
+    - selected contextual mean
+    - selected contextual std
+    - selected fraction
+    - selected temporal mean/std/min/max/span
+
+training:
+  train_devices: [cuda:0, cuda:1]
+  scene_split: stratified_by_dataset_80_10_10
+  epochs: 60
+  batch_size: 16
+  lr: 0.0001
+  weight_decay: 0.0001
+  objective: same_scene_pairwise_rank_plus_oracle_ce
+  weights:
+    rank: 1.0
+    oracle_ce: 0.3
+  min_target_gap: 0.02
+  target_gap_scale: 1.0
+  num_workers: 0
+
+evaluation:
+  primary_metric: uniform_minus_learned_error
+  lower_is_better_metric: target_error
+  baselines:
+    - uniform20
+    - contiguous20
+    - random20_mean
+    - random20_best_of_5
+    - mean_pool_register_cosine_candidate_select
+    - oracle_best_labeled_candidate
+  promotion_rule:
+    - val uniform_minus_learned_error > 0
+    - test uniform_minus_learned_error > 0
+    - learned_regret < uniform_regret
+    - win_rate_vs_uniform materially above random chance among non-uniform-oracle scenes

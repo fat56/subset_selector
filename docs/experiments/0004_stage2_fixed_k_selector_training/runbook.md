@@ -193,6 +193,70 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_
 
 当前完整 run 已完成：`best_margin.pt` 的 `hard_minus_uniform = -0.000087`，未过 promotion gate，但已经明显高于 random。
 
+## Main V3 Hard-Native Candidate Ranking
+
+`main_v3` 不再用 mean-register proxy cosine 作为训练目标，而是复用 `0003` hardlabel300 的 VGGT-native pseudo-label。它在每个 scene 内比较 `uniform20`、`random20_seed000-004`、`contiguous20_seed000` 这些已重跑过 VGGT 的候选子集，训练 selector 预测哪个候选的 `target_error` 更低。
+
+Smoke:
+
+```bash
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_selector_hardnative_candidate_training.py \
+  --run-dir runs/0004_stage2_fixed_k_selector_training/main_v3_hardnative_candidate_selector_smoke \
+  --model-kind candidate_set \
+  --limit-scenes 30 \
+  --epochs 1 \
+  --batch-size 4 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 4 \
+  --train-devices cuda:0 \
+  --log-every-steps 1
+```
+
+正式 run:
+
+```bash
+mkdir -p runs/0004_stage2_fixed_k_selector_training/main_v3_hardnative_candidate_selector
+
+tmux new-session -d -s selector0004_main_v3 '
+cd /home/m/project/ltm/selector &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_selector_hardnative_candidate_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json \
+  --run-dir runs/0004_stage2_fixed_k_selector_training/main_v3_hardnative_candidate_selector \
+  --candidate-tag 20 \
+  --model-kind candidate_set \
+  --train-devices cuda:0,cuda:1 \
+  --epochs 60 \
+  --batch-size 16 \
+  --hidden-dim 512 \
+  --num-layers 4 \
+  --num-heads 8 \
+  --lr 0.0001 \
+  --weight-decay 0.0001 \
+  --rank-weight 1.0 \
+  --ce-weight 0.3 \
+  --min-target-gap 0.02 \
+  --target-gap-scale 1.0 \
+  --log-every-steps 20 \
+  2>&1 | tee runs/0004_stage2_fixed_k_selector_training/main_v3_hardnative_candidate_selector/tmux.log
+'
+```
+
+监控：
+
+```bash
+tmux capture-pane -pt selector0004_main_v3:0 -S -120
+tail -n 60 runs/0004_stage2_fixed_k_selector_training/main_v3_hardnative_candidate_selector/tmux.log
+```
+
+主要指标：
+
+- `target_error` 越低越好。
+- `uniform_minus_learned_error > 0` 表示 learned selector 的平均 hard-native target error 低于 `uniform20`。
+- `learned_regret < uniform_regret` 表示 learned 更接近当前 labeled candidate oracle。
+- `mean_pool_cosine_select_error` 是旧 proxy 的候选选择对照；预检查中它弱于 uniform，不作为 promotion 依据。
+
 ## 判断口径
 
 本轮只判断 selector 是否值得进入 hard validation：

@@ -91,3 +91,18 @@ Promotion gate:
 - 它高于 random，但仍没有超过 uniform，因此没有通过 promotion gate。
 - soft-hard gap 已经很小，说明问题不是 relaxation，而是 mean-register proxy 本身对 uniform coverage 过于友好。
 - 下一步不应继续在同一个 proxy 上堆训练轮次；应该换更强 supervision，例如 hard native labels、候选 subset ranking、register-k-center 对照，或 `0003` learned-readout auxiliary。
+
+## Main V3 Direction
+
+`main_v3` 已切换到 `0003` hard-native candidate ranking：
+
+- 复用 hardlabel300 的 `target_error`，不再把 mean-register proxy 当主目标。
+- 每个 scene 内比较 `uniform20`、`random20_seed000-004`、`contiguous20_seed000`。
+- Primary metric 改为 `uniform_minus_learned_error`，大于 `0` 才表示 learned 的 hard-native target error 低于 uniform。
+- 第一版模型为 `candidate_set` scorer，并保留 `frame_score` 作为表达力对照。
+
+Smoke 已通过 30 scenes / 1 epoch：
+
+- 数据加载、candidate mask 重建、compact feature cache、loss、checkpoint save/load 都正常。
+- 小样本 val pairwise accuracy 达到 `0.8226`，说明 hard-native ranking signal 能被模型读到。
+- smoke 不作为 promotion 结果；下一步需要跑 300 scenes 完整双卡 run，观察 val/test 是否同时超过 uniform。
