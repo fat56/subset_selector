@@ -244,6 +244,22 @@ post-hoc gate scan 也没有找到可部署规则：val-selected gate 在 test �
 - 300 scene 的 train/val/test 可能太小，val-selected gate 容易偶然对齐。
 - 下一步不建议继续只调 `advantage_weight` / `gate_weight`。更高价值的方向是扩大到更多 scene、做 dataset-balanced split robustness，或将 student 输入升级到 patch-summary / temporal motion proxy，再重新训练 gate。
 
+### Seed Robustness 判断
+
+补跑 `aw1_gw05` 的 `5` 个 seed 后，结论更清楚：
+
+- Val-selected gate 在 `5/5` 个 seed 上都是正收益，val 均值 `+0.1084`。
+- Held-out test 只有 `1/5` 个 seed 为正，test 均值 `-0.1172`。
+- 唯一正的 seed `20260610` 在 test 上大量选择 `swapgain20`，达到 `+0.1163`；但另一个同样激进的 seed `20260611` 选择很多 `uniform_jitter20`，test 掉到 `-0.3548`。
+
+因此现在不能把 `20260610` 当成可推广成果。它更像一个有价值的提示：只要 split 中 val 能正确约束 gate，swap-gain candidate 确实可能带来正收益；但目前 global image embedding 没有稳定地区分“该选 swapgain”与“会被 jitter 误导”的场景。
+
+下一步选择应更偏工程诊断：
+
+- 做 larger/balanced split，降低 30-scene val 的偶然性。
+- 引入 patch-summary / motion-aware features，避免只靠 global DINOv2-S embedding。
+- 保留 explicit gate head 架构，但不要再只在 300-scene、同一 feature 上调 loss 权重。
+
 ## 当前风险
 
 - `uniform20` 是很强 baseline，本轮已确认 student 偏离后 val 变差。

@@ -433,6 +433,26 @@ Oracle family:
 - 但这个提升没有泛化，test 仍然是负数；问题更像 split/domain calibration，而不是 gate head 表达力不足。
 - 继续在 300-scene fixed split 上调 gate loss 权重，风险很高；下一步更应该做 split robustness / larger scene set，或让 student 输入从 global embedding 升级到 patch-summary / motion-aware tokens。
 
+### Seed Robustness
+
+为确认 `aw1_gw05` 的失败是否只是单个 split 偶然性，补跑 `5` 个 seed。这里 seed 同时影响 train/val/test scene split 和模型初始化。
+
+| Seed | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | Test deviation | Test learned methods |
+|---|---|---:|---:|---:|---|
+| `20260609` | `gate_logit >= 1.0` | `+0.1120` | `-0.1174` | `0.1333` | `uniform20=26`, `uniform_jitter20=4` |
+| `20260610` | `advantage >= 0.05` | `+0.0811` | `+0.1163` | `0.6667` | `uniform20=10`, `uniform_jitter20=1`, `swapgain20=19` |
+| `20260611` | `gate_logit >= -0.5` | `+0.1341` | `-0.3548` | `0.7000` | `uniform_jitter20=16`, `uniform20=9`, others `5` |
+| `20260612` | `advantage >= 0.3` | `+0.1180` | `-0.0763` | `0.3000` | `uniform20=21`, `swapgain20=9` |
+| `20260613` | `advantage >= 0.0` | `+0.0969` | `-0.1539` | `0.6333` | `uniform20=11`, `swapgain20=15`, others `4` |
+
+汇总：
+
+- Val 全部为正，均值 `+0.1084`。
+- Test 只有 `1/5` 个 seed 为正，均值 `-0.1172`。
+- Test-oracle scan 均值 `+0.0599`，说明有些 split 存在可选阈值，但 val 不能稳定选中。
+
+结论：explicit gate head 有真实但不稳定的信号；当前不能作为可靠 selector。下一步应优先扩大 scene 数、做 dataset-balanced split，或增强 image-only 输入表示，而不是继续依据单个 seed 推进。
+
 ## 记录口径
 
 只有当 student 推理时不读取 VGGT-OMEGA tokens/features，结果才计入 0005。

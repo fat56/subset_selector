@@ -744,6 +744,59 @@ PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/r
 
 当前结论：显式 gate head 能增强 val 拟合，但没有解决 held-out test calibration。继续沿同一 300-scene split 调 loss 权重意义不大，应转向 larger/balanced split 或 patch/motion-aware student。
 
+### Seed robustness
+
+使用 `aw1_gw05` 设置补跑不同 seed。seed 会同时改变 train/val/test split 和模型初始化。
+
+模板：
+
+```bash
+tmux new-session -d -s selector0005_gate_seed10 '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+run_dir="runs/0005_image_only_teacher_student_selector/main_v5_dinov2_swapgain300_gate_head_aw1_gw05_seed20260610"
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir "$run_dir" \
+  --seed 20260610 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:0 \
+  --advantage-weight 1.0 \
+  --gate-weight 0.5 \
+  --rank-weight 0.0 \
+  --positive-margin 0.2 \
+  --log-every-steps 20 \
+  2>&1 | tee "$run_dir/tmux.log"
+'
+```
+
+完成 seed:
+
+| Seed | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | Test oracle scan |
+|---|---|---:|---:|---:|
+| `20260609` | `gate_logit >= 1.0` | `+0.1120` | `-0.1174` | `+0.0000` |
+| `20260610` | `advantage >= 0.05` | `+0.0811` | `+0.1163` | `+0.1485` |
+| `20260611` | `gate_logit >= -0.5` | `+0.1341` | `-0.3548` | `+0.1399` |
+| `20260612` | `advantage >= 0.3` | `+0.1180` | `-0.0763` | `+0.0000` |
+| `20260613` | `advantage >= 0.0` | `+0.0969` | `-0.1539` | `+0.0108` |
+
+汇总：
+
+- Val mean `+0.1084`
+- Test mean `-0.1172`
+- Positive test seeds: `1 / 5`
+- Test-oracle mean `+0.0599`
+
+判断：gate head 有 split-dependent 正信号，但不能稳定泛化。下一步不应只继续加 seed，而应扩大 scene 数或升级 image-only feature 表示。
+
 ## 输出目录
 
 建议：
