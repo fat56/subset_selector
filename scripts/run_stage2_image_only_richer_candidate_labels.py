@@ -68,6 +68,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-cache", action="store_true")
     parser.add_argument("--cache-only", action="store_true")
     parser.add_argument("--labels-only", action="store_true")
+    parser.add_argument(
+        "--ready-only",
+        action="store_true",
+        help="Analyze only scenes whose richer full+subset caches are complete; useful after an interrupted cache run.",
+    )
     parser.add_argument("--force-cache", action="store_true")
     parser.add_argument("--max-pixels-per-image", type=int, default=1024)
     parser.add_argument("--max-pointmap-points", type=int, default=60000)
@@ -101,6 +106,17 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
     write_candidate_summary(run_dir / "richer_candidate_summary.json", scenes, records)
+    if args.ready_only:
+        scenes, jobs, records = filter_ready_scenes(scenes, jobs, records)
+        if not scenes:
+            raise RuntimeError("No scenes have complete richer caches under --ready-only.")
+        (run_dir / "ready_only_cache_jobs.json").write_text(json.dumps(jobs, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        (run_dir / "ready_only_cache_records.json").write_text(
+            json.dumps({"records": records}, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        write_candidate_summary(run_dir / "ready_only_candidate_summary.json", scenes, records)
+        print(json.dumps({"event": "ready_only_filter", "scenes": len(scenes), "jobs": len(jobs), "records": len(records)}), flush=True)
 
     if not args.skip_cache:
         missing_jobs = [job for job in jobs if args.force_cache or not cache_ready(Path(job["output_dir"]))]
@@ -131,11 +147,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     write_csv(run_dir / "richer_hardlabel_native_metrics.csv", richer_metrics)
 
+    scene_filter = {scene.scene_id for scene in scenes} if args.ready_only else None
     base_metric_rows = read_csv(resolve(args.base_metrics_csv))
+    if scene_filter is not None:
+        base_metric_rows = [row for row in base_metric_rows if row["scene_id"] in scene_filter]
     merged_metric_rows = merge_metric_rows(base_metric_rows, richer_metrics, candidate_tag=args.candidate_tag)
     write_csv(run_dir / "merged_hardlabel_native_metrics.csv", merged_metric_rows)
 
     base_jobs = json.loads(resolve(args.base_cache_jobs_json).read_text(encoding="utf-8"))
+    if scene_filter is not None:
+        base_jobs = [job for job in base_jobs if job["scene_id"] in scene_filter]
     merged_jobs = merge_jobs(base_jobs, jobs, candidate_tag=args.candidate_tag)
     (run_dir / "merged_cache_jobs.json").write_text(json.dumps(merged_jobs, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -436,6 +457,29 @@ def cache_ready(output_dir: Path) -> bool:
             "pose_enc.pt",
         )
     )
+
+
+def filter_ready_scenes(
+    scenes: list[SceneSource],
+    jobs: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+) -> tuple[list[SceneSource], list[dict[str, Any]], list[dict[str, Any]]]:
+    jobs_by_scene: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    records_by_scene: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for job in jobs:
+        jobs_by_scene[job["scene_id"]].append(job)
+    for record in records:
+        records_by_scene[record["scene_id"]].append(record)
+
+    ready_scene_ids = {
+        scene_id
+        for scene_id, scene_jobs in jobs_by_scene.items()
+        if len(scene_jobs) == 9 and all(cache_ready(Path(job["output_dir"])) for job in scene_jobs)
+    }
+    ready_scenes = [scene for scene in scenes if scene.scene_id in ready_scene_ids]
+    ready_jobs = [job for job in jobs if job["scene_id"] in ready_scene_ids]
+    ready_records = [record for record in records if record["scene_id"] in ready_scene_ids]
+    return ready_scenes, ready_jobs, ready_records
 
 
 def run_cache_jobs_parallel(

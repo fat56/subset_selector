@@ -446,7 +446,15 @@ def load_examples(config: ImageOnlyTrainConfig) -> list[SceneExample]:
 
 
 def is_candidate_method(method: str, tag: str) -> bool:
-    return method == f"uniform{tag}" or method.startswith(f"random{tag}_") or method.startswith(f"contiguous{tag}_")
+    return (
+        method == f"uniform{tag}"
+        or method.startswith(f"random{tag}_")
+        or method.startswith(f"contiguous{tag}_")
+        or method.startswith(f"uniform_jitter{tag}_")
+        or method.startswith(f"convnext_kcenter{tag}_")
+        or method.startswith(f"dinov2_kcenter{tag}_")
+        or method.startswith(f"motion_spread{tag}_")
+    )
 
 
 def read_image_list(path: Path) -> list[Path]:
@@ -509,12 +517,7 @@ def write_dataset_summary(examples: list[SceneExample], config: ImageOnlyTrainCo
         for candidate in example.candidates:
             candidate_counts[candidate.method] = candidate_counts.get(candidate.method, 0) + 1
         best = min(example.candidates, key=lambda candidate: candidate.target_error)
-        if best.method.startswith(f"random{config.candidate_tag}_"):
-            key = f"random{config.candidate_tag}"
-        elif best.method.startswith(f"contiguous{config.candidate_tag}_"):
-            key = f"contiguous{config.candidate_tag}"
-        else:
-            key = best.method
+        key = method_family(best.method, config.candidate_tag)
         oracle_counts[key] = oracle_counts.get(key, 0) + 1
     summary = {
         "total_scenes": len(examples),
@@ -809,6 +812,8 @@ def evaluate_selector(
     random_best_errors = []
     oracle_errors = []
     cosine_select_errors = []
+    learned_method_counts: dict[str, int] = {}
+    oracle_method_counts: dict[str, int] = {}
     learned_wins_vs_uniform = 0
     oracle_top1 = 0
     total_scenes = 0
@@ -829,6 +834,8 @@ def evaluate_selector(
                 pred_local = int(torch.argmax(row_scores).item())
                 oracle_local = int(torch.argmin(row_targets).item())
                 cosine_local = int(torch.argmax(row_cosines).item())
+                learned_method = method_family(methods[pred_local], config.candidate_tag)
+                oracle_method = method_family(methods[oracle_local], config.candidate_tag)
                 learned_error = float(row_targets[pred_local].item())
                 oracle_error = float(row_targets[oracle_local].item())
                 cosine_error = float(row_targets[cosine_local].item())
@@ -845,6 +852,8 @@ def evaluate_selector(
                 random_best_errors.append(float(min(random_errors)))
                 oracle_errors.append(oracle_error)
                 cosine_select_errors.append(cosine_error)
+                learned_method_counts[learned_method] = learned_method_counts.get(learned_method, 0) + 1
+                oracle_method_counts[oracle_method] = oracle_method_counts.get(oracle_method, 0) + 1
                 learned_wins_vs_uniform += int(learned_error < uniform_error)
                 oracle_top1 += int(pred_local == oracle_local)
                 for i in range(len(row_targets)):
@@ -880,6 +889,8 @@ def evaluate_selector(
         "win_rate_vs_uniform": learned_wins_vs_uniform / max(total_scenes, 1),
         "oracle_top1_rate": oracle_top1 / max(total_scenes, 1),
         "pairwise_accuracy": pair_correct / max(pair_total, 1),
+        "learned_method_counts": learned_method_counts,
+        "oracle_method_counts": oracle_method_counts,
     }
 
 
@@ -930,6 +941,21 @@ def prefix_method_error(methods: list[str], target_errors: torch.Tensor, prefix:
 
 def prefix_method_errors(methods: list[str], target_errors: torch.Tensor, prefix: str) -> list[float]:
     return [float(target_errors[index].item()) for index, candidate_method in enumerate(methods) if candidate_method.startswith(prefix)]
+
+
+def method_family(method: str, tag: str) -> str:
+    families = (
+        f"random{tag}_",
+        f"contiguous{tag}_",
+        f"uniform_jitter{tag}_",
+        f"convnext_kcenter{tag}_",
+        f"dinov2_kcenter{tag}_",
+        f"motion_spread{tag}_",
+    )
+    for prefix in families:
+        if method.startswith(prefix):
+            return prefix.removesuffix("_")
+    return method
 
 
 def mean(values: list[float]) -> float:

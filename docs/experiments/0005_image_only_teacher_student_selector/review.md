@@ -66,6 +66,42 @@ student 输入没有 VGGT-OMEGA `camera_token`、`register_tokens` 或 full VGGT
 - 构建 `Main V3 marginal-gain teacher`，让 student 学“加入当前集合后的增益”，而不是在偏 uniform 的候选池里猜 top1。
 - 如果仍用 Main V1，应该先扩到 hardlabel1000 + richer candidates，而不是在 hardlabel300 上继续加 epoch。
 
+## Richer Candidates 更新
+
+已按上述判断实现 richer-candidate label 流程，并完成两层诊断：
+
+1. `4-scene smoke` 成功，证明新增候选与 native metric 计算链路可跑通。
+2. 正式 hardlabel300 cache 跑到 `1706/2700` jobs 后被 GPU/driver 状态阻塞；其中 `108/300` scene 已完整拥有 `full + 8 subset` cache。
+
+对这 `108` 个完整 scene 做 `ready-only` partial labels 后，oracle 分布明显改善：
+
+| Family | Oracle scenes |
+|---|---:|
+| `uniform_jitter20` | 76 |
+| `uniform20` | 14 |
+| `random20` | 8 |
+| `dinov2_kcenter20` | 5 |
+| `convnext_kcenter20` | 5 |
+
+这说明第一轮失败的主要原因确实是旧 candidate pool 过窄、过度偏向 `uniform20`。在 ready108 上，richer-best 比 old-best 平均低 `0.4439` target_error，并且在 `86/108` 个 scene 上优于旧候选池 best。
+
+## Ready108 Student 诊断
+
+CUDA 当前不可用，因此先用 CPU 跑了小模型诊断：
+
+| Run | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---:|---:|---|
+| ConvNeXt-Tiny ready108 | `+0.0814` | `-0.2163` | 不稳 |
+| DINOv2-S ready108 | `+0.2447` | `+0.0436` | 有 partial 正信号 |
+
+DINOv2-S 的 test 提升很小，不能直接 promotion；但它已经不同于 v0 的 `0.0000` fallback，说明 richer labels 让 image-only student 开始学到可用 deviation。
+
+当前最合理的判断是：
+
+- 继续补全 hardlabel300 richer cache，而不是回到旧 label 上调参。
+- 补全后优先跑 DINOv2-S richer300 正式训练；ConvNeXt-Tiny 作为轻量对照。
+- 如果 richer300 仍只给很小提升，再进入 Main V3 marginal-gain teacher，而不是继续堆 `memory_candidate_set` 容量。
+
 ## 当前风险
 
 - `uniform20` 是很强 baseline，本轮已确认 student 偏离后 val 变差。
@@ -77,4 +113,5 @@ student 输入没有 VGGT-OMEGA `camera_token`、`register_tokens` 或 full VGGT
 
 - 不把本轮 checkpoint 推进到 hard subset VGGT rerun。
 - 保留 ConvNeXt-Tiny 和 DINOv2-S feature cache 作为后续 ablation 资产。
-- 优先设计 richer candidate labels 或 `marginal-gain` teacher，再训练下一版 0005。
+- GPU/driver 恢复后，先续跑缺失的 `994` 个 richer cache jobs。
+- 缓存补全后生成正式 hardlabel300 richer labels，并启动 DINOv2-S / ConvNeXt-Tiny richer300 双卡训练。
