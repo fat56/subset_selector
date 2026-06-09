@@ -166,6 +166,25 @@ frame-score 的候选 score 是 selected frame scores 的平均值，它没有�
 - 监督每一步 `S -> S + i` 的增益，而不是只监督最终候选 top1。
 - 若离线近似有正信号，再补跑更多 candidate cache 做 true teacher。
 
+## Ridge-Gain 近似
+
+已实现 `frame_target_mode=ridge_gain`：
+
+- 以 `uniform20` 为基准，定义 `utility = uniform20_error - candidate_error`。
+- 用 candidate masks 做 ridge regression，把 candidate utility 近似分摊到 frames。
+- 训练 `memory_frame_score` 同时做 candidate ranking、uniform-gated CE 和 frame target regression。
+
+结果：
+
+| Run | Weight | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---:|---:|---:|---|
+| Ridge-gain frame-score | `0.20` | `+0.0148` | `0.0000` | test 回 uniform |
+| Ridge-gain frame-score | `0.05` | `+0.0130` | `0.0000` | test 回 uniform |
+
+target 分布显示这个 proxy 较噪：`mean=-1.0240`，`std=2.4872`，`positive_fraction=0.3351`，并且触达 `[-5, +5]` clip。它能制造一点 val deviation，但不能超过 candidate-set gated 的 test `+0.0328`。
+
+结论：不能继续依赖现有候选的线性反解来代表 marginal gain；下一步如果还要推进 Main V3，应补跑小规模 true step-gain cache，而不是只调 ridge 权重。
+
 ## 当前风险
 
 - `uniform20` 是很强 baseline，本轮已确认 student 偏离后 val 变差。
@@ -178,4 +197,4 @@ frame-score 的候选 score 是 selected frame scores 的平均值，它没有�
 - 不把本轮 checkpoint 推进到 hard subset VGGT rerun。
 - 保留 ConvNeXt-Tiny 和 DINOv2-S feature cache 作为后续 ablation 资产。
 - 保留 DINOv2-S gated `margin=0.2` 作为当前最好 image-only checkpoint。
-- 转向 Main V3 marginal-gain teacher，而不是继续增加 Main V1 epoch/capacity。
+- 若继续 0005，应做小规模 true step-gain cache；否则先暂停 image-only selector，重新设计 teacher。

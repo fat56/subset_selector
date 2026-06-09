@@ -510,6 +510,40 @@ for t in 1..K:
   label gain_i = utility(S + i) - utility(S)
 ```
 
+已完成 ridge-gain 近似：
+
+```bash
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0005_image_only_teacher_student_selector/main_v3_dinov2_vits14_frame_score_ridge_gain_w02 \
+  --model-kind memory_frame_score \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 60 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:0,cuda:1 \
+  --uniform-gate-margin 0.2 \
+  --frame-target-mode ridge_gain \
+  --frame-target-weight 0.2 \
+  --frame-target-ridge 0.01 \
+  --frame-target-clip 5.0 \
+  --log-every-steps 10
+```
+
+对照：
+
+| Run | Frame target weight | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---:|---:|---:|---|
+| `main_v3_dinov2_vits14_frame_score_ridge_gain_w02` | `0.20` | `+0.0148` | `0.0000` | test 回 uniform |
+| `main_v3_dinov2_vits14_frame_score_ridge_gain_w005` | `0.05` | `+0.0130` | `0.0000` | test 回 uniform |
+
+结论：ridge 近似不能稳定超过 uniform；只有 candidate-set gated m=0.2 保留了 test `+0.0328` 的小正信号。若继续 Main V3，需要补跑 true step-gain cache，而不是继续调 frame-target weight。
+
 ## 输出目录
 
 建议：

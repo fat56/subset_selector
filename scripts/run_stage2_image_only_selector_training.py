@@ -71,6 +71,10 @@ class ImageOnlyTrainConfig:
     min_target_gap: float = 0.02
     target_gap_scale: float = 1.0
     uniform_gate_margin: float = -1.0
+    frame_target_mode: str = "none"
+    frame_target_weight: float = 0.0
+    frame_target_ridge: float = 1e-2
+    frame_target_clip: float = 5.0
     num_workers: int = 0
     eval_every_epochs: int = 1
     log_every_steps: int = 20
@@ -229,8 +233,18 @@ class MemoryFrameScorer(nn.Module):
 
 
 class ImageOnlyCandidateDataset(Dataset[dict[str, Any]]):
-    def __init__(self, examples: list[SceneExample], split: str) -> None:
+    def __init__(
+        self,
+        examples: list[SceneExample],
+        split: str,
+        frame_target_mode: str = "none",
+        frame_target_ridge: float = 1e-2,
+        frame_target_clip: float = 5.0,
+    ) -> None:
         self.examples = [example for example in examples if example.split == split]
+        self.frame_target_mode = frame_target_mode
+        self.frame_target_ridge = frame_target_ridge
+        self.frame_target_clip = frame_target_clip
         if not self.examples:
             raise ValueError(f"No examples for split={split}")
 
@@ -248,9 +262,18 @@ class ImageOnlyCandidateDataset(Dataset[dict[str, Any]]):
             frame_features = torch.cat([frame_features, image_stats.float()], dim=-1)
         candidate_masks = torch.stack([candidate.mask for candidate in example.candidates]).float()
         target_errors = torch.tensor([candidate.target_error for candidate in example.candidates], dtype=torch.float32)
+        methods = [candidate.method for candidate in example.candidates]
         mean_pool_cosines = torch.tensor(
             [candidate.mean_pool_register_cosine for candidate in example.candidates],
             dtype=torch.float32,
+        )
+        frame_targets = compute_frame_targets(
+            candidate_masks,
+            target_errors,
+            methods,
+            self.frame_target_mode,
+            self.frame_target_ridge,
+            self.frame_target_clip,
         )
         return {
             "scene_id": example.scene_id,
@@ -260,7 +283,8 @@ class ImageOnlyCandidateDataset(Dataset[dict[str, Any]]):
             "candidate_masks": candidate_masks,
             "target_errors": target_errors,
             "mean_pool_cosines": mean_pool_cosines,
-            "methods": [candidate.method for candidate in example.candidates],
+            "frame_targets": frame_targets,
+            "methods": methods,
         }
 
 
@@ -302,6 +326,10 @@ def main(argv: list[str] | None = None) -> int:
         default=-1.0,
         help="If >=0, CE targets uniform20 unless the oracle beats uniform20 by this target-error margin.",
     )
+    parser.add_argument("--frame-target-mode", choices=["none", "ridge_gain"], default="none")
+    parser.add_argument("--frame-target-weight", type=float, default=0.0)
+    parser.add_argument("--frame-target-ridge", type=float, default=1e-2)
+    parser.add_argument("--frame-target-clip", type=float, default=5.0)
     parser.add_argument("--train-devices", default="cuda:0,cuda:1")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--eval-every-epochs", type=int, default=1)
@@ -337,10 +365,16 @@ def main(argv: list[str] | None = None) -> int:
         min_target_gap=args.min_target_gap,
         target_gap_scale=args.target_gap_scale,
         uniform_gate_margin=args.uniform_gate_margin,
+        frame_target_mode=args.frame_target_mode,
+        frame_target_weight=args.frame_target_weight,
+        frame_target_ridge=args.frame_target_ridge,
+        frame_target_clip=args.frame_target_clip,
         num_workers=args.num_workers,
         eval_every_epochs=args.eval_every_epochs,
         log_every_steps=args.log_every_steps,
     )
+    if config.frame_target_weight > 0.0 and config.model_kind != "memory_frame_score":
+        raise ValueError("--frame-target-weight requires --model-kind memory_frame_score")
     (run_dir / "train_config.json").write_text(json.dumps(asdict(config), default=str, indent=2) + "\n", encoding="utf-8")
     set_random_seeds(config.seed)
     examples = load_examples(config)
@@ -516,6 +550,7 @@ def write_dataset_summary(examples: list[SceneExample], config: ImageOnlyTrainCo
     candidate_counts: dict[str, int] = {}
     oracle_counts: dict[str, int] = {}
     backbone_counts: dict[str, int] = {}
+    frame_target_values = []
     for example in examples:
         split_counts[example.split] = split_counts.get(example.split, 0) + 1
         dataset_counts[example.dataset] = dataset_counts.get(example.dataset, 0) + 1
@@ -527,6 +562,19 @@ def write_dataset_summary(examples: list[SceneExample], config: ImageOnlyTrainCo
         best = min(example.candidates, key=lambda candidate: candidate.target_error)
         key = method_family(best.method, config.candidate_tag)
         oracle_counts[key] = oracle_counts.get(key, 0) + 1
+        if config.frame_target_mode != "none":
+            masks = torch.stack([candidate.mask for candidate in example.candidates]).float()
+            errors = torch.tensor([candidate.target_error for candidate in example.candidates], dtype=torch.float32)
+            methods = [candidate.method for candidate in example.candidates]
+            targets = compute_frame_targets(
+                masks,
+                errors,
+                methods,
+                config.frame_target_mode,
+                config.frame_target_ridge,
+                config.frame_target_clip,
+            )
+            frame_target_values.extend(float(value) for value in targets.tolist())
     summary = {
         "total_scenes": len(examples),
         "split_counts": split_counts,
@@ -538,6 +586,8 @@ def write_dataset_summary(examples: list[SceneExample], config: ImageOnlyTrainCo
         "feature_cache": str(config.feature_cache),
         "student_input_boundary": "image_only_no_vggt_tokens",
     }
+    if frame_target_values:
+        summary["frame_target_summary"] = summarize_values(frame_target_values)
     (config.run_dir / "dataset_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     rows = []
     for example in examples:
@@ -570,6 +620,7 @@ def collate_candidate_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
     candidate_valid = torch.zeros((batch_size, max_candidates), dtype=torch.bool)
     target_errors = torch.full((batch_size, max_candidates), 0.0, dtype=torch.float32)
     mean_pool_cosines = torch.full((batch_size, max_candidates), 0.0, dtype=torch.float32)
+    frame_targets = torch.zeros((batch_size, max_frames), dtype=torch.float32)
     uniform_indices = torch.zeros((batch_size,), dtype=torch.long)
     methods = []
     for row, item in enumerate(items):
@@ -581,6 +632,7 @@ def collate_candidate_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
         candidate_valid[row, :candidate_count] = True
         target_errors[row, :candidate_count] = item["target_errors"]
         mean_pool_cosines[row, :candidate_count] = item["mean_pool_cosines"]
+        frame_targets[row, :frame_count] = item["frame_targets"]
         uniform_indices[row] = find_uniform_index(item["methods"])
         methods.append(item["methods"])
     return {
@@ -590,6 +642,7 @@ def collate_candidate_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
         "candidate_valid": candidate_valid,
         "target_errors": target_errors,
         "mean_pool_cosines": mean_pool_cosines,
+        "frame_targets": frame_targets,
         "uniform_indices": uniform_indices,
         "scene_ids": [item["scene_id"] for item in items],
         "scene_keys": [item["scene_key"] for item in items],
@@ -605,10 +658,39 @@ def find_uniform_index(methods: list[str]) -> int:
     return next((index for index, method in enumerate(methods) if method.startswith("uniform") and "_" not in method), 0)
 
 
+def compute_frame_targets(
+    candidate_masks: torch.Tensor,
+    target_errors: torch.Tensor,
+    methods: list[str],
+    mode: str,
+    ridge: float,
+    clip: float,
+) -> torch.Tensor:
+    if mode == "none":
+        return torch.zeros(candidate_masks.shape[1], dtype=torch.float32)
+    if mode != "ridge_gain":
+        raise ValueError(f"Unsupported frame_target_mode={mode}")
+
+    uniform_index = find_uniform_index(methods)
+    uniform_error = target_errors[uniform_index]
+    utility = (uniform_error - target_errors).float().clamp(-clip, clip)
+    design = candidate_masks.float()
+    design = design / design.sum(dim=1, keepdim=True).clamp_min(1.0)
+    frame_count = design.shape[1]
+    eye = torch.eye(frame_count, dtype=torch.float32)
+    lhs = design.T @ design + max(ridge, 1e-8) * eye
+    rhs = design.T @ utility
+    try:
+        targets = torch.linalg.solve(lhs, rhs)
+    except RuntimeError:
+        targets = torch.linalg.lstsq(lhs, rhs[:, None]).solution.squeeze(1)
+    return torch.nan_to_num(targets.float(), nan=0.0, posinf=clip, neginf=-clip).clamp(-clip, clip)
+
+
 def train_selector(config: ImageOnlyTrainConfig, examples: list[SceneExample]) -> dict[str, Any]:
-    train_ds = ImageOnlyCandidateDataset(examples, "train")
-    val_ds = ImageOnlyCandidateDataset(examples, "val")
-    test_ds = ImageOnlyCandidateDataset(examples, "test")
+    train_ds = build_candidate_dataset(examples, "train", config)
+    val_ds = build_candidate_dataset(examples, "val", config)
+    test_ds = build_candidate_dataset(examples, "test", config)
     train_loader = DataLoader(
         train_ds,
         batch_size=config.batch_size,
@@ -662,6 +744,7 @@ def train_selector(config: ImageOnlyTrainConfig, examples: list[SceneExample]) -
             candidate_masks = batch["candidate_masks"].to(device, non_blocking=True)
             frame_mask = batch["frame_mask"].to(device, non_blocking=True)
             uniform_indices = batch["uniform_indices"].to(device, non_blocking=True)
+            frame_targets = batch["frame_targets"].to(device, non_blocking=True)
             loss, stats = hardnative_loss(
                 scores,
                 target_errors,
@@ -669,6 +752,10 @@ def train_selector(config: ImageOnlyTrainConfig, examples: list[SceneExample]) -
                 candidate_masks,
                 frame_mask,
                 uniform_indices,
+                frame_targets,
+                model,
+                batch,
+                device,
                 config,
             )
             optimizer.zero_grad(set_to_none=True)
@@ -690,6 +777,7 @@ def train_selector(config: ImageOnlyTrainConfig, examples: list[SceneExample]) -
                             "rank_loss": round(stats["rank_loss"], 6),
                             "ce_loss": round(stats["ce_loss"], 6),
                             "coverage_loss": round(stats["coverage_loss"], 6),
+                            "frame_target_loss": round(stats["frame_target_loss"], 6),
                             "pairwise_accuracy": round(stats["pairwise_accuracy"], 6),
                             "gate_oracle_rate": round(stats["gate_oracle_rate"], 6),
                             "steps_per_sec": round(steps_per_sec, 4),
@@ -736,6 +824,16 @@ def train_selector(config: ImageOnlyTrainConfig, examples: list[SceneExample]) -
     return summary
 
 
+def build_candidate_dataset(examples: list[SceneExample], split: str, config: ImageOnlyTrainConfig) -> ImageOnlyCandidateDataset:
+    return ImageOnlyCandidateDataset(
+        examples,
+        split,
+        frame_target_mode=config.frame_target_mode,
+        frame_target_ridge=config.frame_target_ridge,
+        frame_target_clip=config.frame_target_clip,
+    )
+
+
 def build_model(config: ImageOnlyTrainConfig, input_dim: int, max_frames: int) -> nn.Module:
     kwargs = {
         "input_dim": input_dim,
@@ -779,6 +877,10 @@ def hardnative_loss(
     candidate_masks: torch.Tensor,
     frame_mask: torch.Tensor,
     uniform_indices: torch.Tensor,
+    frame_targets: torch.Tensor,
+    model: nn.Module,
+    batch: dict[str, Any],
+    device: torch.device,
     config: ImageOnlyTrainConfig,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     valid = candidate_valid.to(dtype=torch.bool, device=scores.device)
@@ -813,14 +915,40 @@ def hardnative_loss(
         gate_oracle_rate = scores.new_zeros(())
     ce_loss = F.cross_entropy(masked_scores, ce_indices)
     coverage_loss = coverage_regularizer(scores, candidate_valid, candidate_masks, frame_mask)
-    loss = config.rank_weight * rank_loss + config.ce_weight * ce_loss + config.coverage_weight * coverage_loss
+    frame_target_loss = compute_frame_target_loss(model, batch, frame_targets, frame_mask, device, config)
+    loss = (
+        config.rank_weight * rank_loss
+        + config.ce_weight * ce_loss
+        + config.coverage_weight * coverage_loss
+        + config.frame_target_weight * frame_target_loss
+    )
     return loss, {
         "rank_loss": float(rank_loss.detach().item()),
         "ce_loss": float(ce_loss.detach().item()),
         "coverage_loss": float(coverage_loss.detach().item()),
+        "frame_target_loss": float(frame_target_loss.detach().item()),
         "pairwise_accuracy": float(pairwise_accuracy.detach().item()),
         "gate_oracle_rate": float(gate_oracle_rate.detach().item()),
     }
+
+
+def compute_frame_target_loss(
+    model: nn.Module,
+    batch: dict[str, Any],
+    frame_targets: torch.Tensor,
+    frame_mask: torch.Tensor,
+    device: torch.device,
+    config: ImageOnlyTrainConfig,
+) -> torch.Tensor:
+    if config.frame_target_weight <= 0.0 or config.frame_target_mode == "none":
+        return frame_mask.new_zeros((), dtype=torch.float32)
+    raw_model = model.module if isinstance(model, nn.DataParallel) else model
+    if not isinstance(raw_model, MemoryFrameScorer):
+        raise ValueError("frame_target_loss requires MemoryFrameScorer")
+    frame_scores = raw_model(batch["features"].to(device, non_blocking=True), frame_mask)
+    valid = frame_mask.to(device=frame_scores.device, dtype=torch.bool)
+    targets = frame_targets.to(device=frame_scores.device, dtype=frame_scores.dtype)
+    return F.smooth_l1_loss(frame_scores[valid], targets[valid])
 
 
 def coverage_regularizer(
@@ -1000,6 +1128,21 @@ def method_family(method: str, tag: str) -> str:
 
 def mean(values: list[float]) -> float:
     return float(sum(values) / len(values)) if values else float("nan")
+
+
+def summarize_values(values: list[float]) -> dict[str, float]:
+    value_count = len(values)
+    value_mean = mean(values)
+    variance = mean([(value - value_mean) ** 2 for value in values])
+    return {
+        "count": float(value_count),
+        "mean": value_mean,
+        "std": variance**0.5,
+        "min": min(values),
+        "max": max(values),
+        "positive_fraction": sum(1 for value in values if value > 0.0) / max(value_count, 1),
+        "negative_fraction": sum(1 for value in values if value < 0.0) / max(value_count, 1),
+    }
 
 
 def save_checkpoint(

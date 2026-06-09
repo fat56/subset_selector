@@ -301,6 +301,37 @@ frame-score 的 val-selected post-hoc gate:
 - 这支持一个判断：selector 需要 coverage/diversity-aware set reasoning，不能只给每帧独立质量分。
 - 下一版 Main V3 应构建真正的 marginal-gain teacher：用已有 richer candidate cache 先做 greedy/beam 近似，再决定是否补跑更多 VGGT candidate cache。
 
+## Ridge-Gain Frame Target
+
+为了进一步逼近 marginal-gain，新增 `frame_target_mode=ridge_gain`：
+
+- 在同一 scene 内，以 `uniform20` 为基准，把每个 candidate 的 `utility = uniform20_error - candidate_error` 作为监督。
+- 用 candidate masks 解一个 ridge additive frame target，把 candidate-level utility 近似分摊到被选中的 frames。
+- `memory_frame_score` 继续保留 candidate ranking / uniform-gated loss，并额外回归 frame target。
+
+target 诊断：
+
+- `count = 27000`
+- `mean = -1.0240`
+- `std = 2.4872`
+- `positive_fraction = 0.3351`
+- `negative_fraction = 0.5828`
+- `min/max = -5.0 / +5.0`
+
+结果：
+
+| Run | Frame target weight | Val `uniform - learned` | Test `uniform - learned` | Val pairwise | Test pairwise | 判断 |
+|---|---:|---:|---:|---:|---:|---|
+| `main_v3_dinov2_vits14_frame_score_ridge_gain_w02` | `0.20` | `+0.0148` | `0.0000` | `0.7194` | `0.7253` | val 小正，test 回 uniform |
+| `main_v3_dinov2_vits14_frame_score_ridge_gain_w005` | `0.05` | `+0.0130` | `0.0000` | `0.6913` | `0.7285` | val 小正，test 回 uniform |
+
+结论：
+
+- ridge-gain proxy 比 plain frame-score 多一点 val 信号，但没有泛化到 test。
+- 现有 richer candidate labels 不足以稳定反推出 per-frame marginal gain。
+- 当前最好结果仍是 `memory_candidate_set + uniform-gated margin=0.2`，test `+0.0328`。
+- 真正的 Main V3 需要补跑 `S + i` 或 small beam candidate cache，得到显式 step-level teacher gain。
+
 ## 记录口径
 
 只有当 student 推理时不读取 VGGT-OMEGA tokens/features，结果才计入 0005。
