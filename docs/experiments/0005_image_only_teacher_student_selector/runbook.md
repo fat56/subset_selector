@@ -2,7 +2,12 @@
 
 ## 当前状态
 
-`0005` 目前是 design-draft，尚未实现代码。第一步不是训练，而是把 teacher/student 数据流和 evaluation gate 固定下来，避免再次落回“推理时依赖 full VGGT features”的 0004 路线。
+`0005/Main V1` 已实现并完成 hardlabel300 第一轮：
+
+- `main_v1_convnext_tiny_candidate_rank`
+- `main_v1_dinov2_vits14_candidate_rank`
+
+这轮没有得到超过 `uniform20` 的正提升。best-val checkpoint 都退回 `uniform20`，因此不推进 hard subset VGGT rerun。
 
 ## 核心约束
 
@@ -32,52 +37,127 @@ Student selector 推理时禁止使用：
 4. 与 `uniform20`、random、cheap-feature k-center 对比。
 5. 若 val/test 都无法超过 uniform，停止，不扩到 streaming。
 
-## 预期脚本
+## 已实现脚本
 
-尚未创建，建议后续按下面名字实现：
+当前已实现：
 
 ```bash
 scripts/prepare_stage2_image_only_selector_features.py
 scripts/run_stage2_image_only_selector_training.py
-scripts/evaluate_stage2_image_only_selector.py
 ```
 
-## 推荐 smoke
+暂未单独拆 `evaluate_stage2_image_only_selector.py`；训练脚本会在 best-val checkpoint 上输出 train/val/test summary。
 
-第一版 smoke 只用 hardlabel300：
+## Smoke
+
+ConvNeXt-Tiny smoke:
 
 ```bash
 PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/prepare_stage2_image_only_selector_features.py \
   --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
   --cache-jobs-json runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json \
-  --out-dir caches/image_features/0005/hardlabel300_dinov2s \
-  --backbone dinov2_vits14 \
-  --device cuda:0
+  --out-dir caches/image_features/0005/smoke_convnext_tiny \
+  --backbone convnext_tiny \
+  --device cuda:0 \
+  --batch-size 32 \
+  --limit-scenes 12 \
+  --force
 ```
 
-训练命令建议：
+训练 smoke:
 
 ```bash
 PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
   --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
   --cache-jobs-json runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json \
-  --feature-cache caches/image_features/0005/hardlabel300_dinov2s \
-  --run-dir runs/0005_image_only_teacher_student_selector/main_v1_dinov2_candidate_rank \
+  --feature-cache caches/image_features/0005/smoke_convnext_tiny \
+  --run-dir runs/0005_image_only_teacher_student_selector/smoke_convnext_tiny \
   --model-kind memory_candidate_set \
-  --memory-slots 8 \
+  --hidden-dim 128 \
+  --num-layers 1 \
+  --num-heads 4 \
+  --memory-slots 4 \
+  --epochs 2 \
+  --batch-size 4 \
+  --limit-scenes 12 \
+  --train-devices cuda:0 \
+  --log-every-steps 1
+```
+
+## Main V1 正式运行
+
+### ConvNeXt-Tiny
+
+```bash
+tmux new-session -d -s selector0005_convnext '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/prepare_stage2_image_only_selector_features.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json \
+  --out-dir caches/image_features/0005/hardlabel300_convnext_tiny \
+  --backbone convnext_tiny \
+  --device cuda:0 \
+  --batch-size 64 \
+  2>&1 | tee runs/0005_image_only_teacher_student_selector/main_v1_convnext_tiny_candidate_rank/feature_cache.log &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_convnext_tiny \
+  --run-dir runs/0005_image_only_teacher_student_selector/main_v1_convnext_tiny_candidate_rank \
+  --model-kind memory_candidate_set \
   --hidden-dim 256 \
   --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
   --epochs 60 \
   --batch-size 32 \
-  --train-devices cuda:0,cuda:1
+  --lr 2e-4 \
+  --train-devices cuda:0,cuda:1 \
+  --log-every-steps 10 \
+  2>&1 | tee runs/0005_image_only_teacher_student_selector/main_v1_convnext_tiny_candidate_rank/tmux.log
+'
+```
+
+### DINOv2-S/ViT-S
+
+```bash
+tmux new-session -d -s selector0005_dinov2 '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/prepare_stage2_image_only_selector_features.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json \
+  --out-dir caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --backbone dinov2_vits14 \
+  --device cuda:1 \
+  --batch-size 64 \
+  2>&1 | tee runs/0005_image_only_teacher_student_selector/main_v1_dinov2_vits14_candidate_rank/feature_cache.log &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
+  --labels-csv runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0005_image_only_teacher_student_selector/main_v1_dinov2_vits14_candidate_rank \
+  --model-kind memory_candidate_set \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 60 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:0,cuda:1 \
+  --log-every-steps 10 \
+  2>&1 | tee runs/0005_image_only_teacher_student_selector/main_v1_dinov2_vits14_candidate_rank/tmux.log
+'
 ```
 
 ## Main V1 判定
 
 通过条件：
 
-- val `uniform_minus_student_error > 0`。
-- held-out test `uniform_minus_student_error > 0`。
+- val `uniform_minus_learned_error > 0`。
+- held-out test `uniform_minus_learned_error > 0`。
 - student inference 不读取 VGGT features。
 
 不通过条件：
@@ -87,7 +167,7 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage
 
 ## Main V2 计划
 
-如果 Main V1 通过，再做 streaming memory selector：
+如果 richer candidates / marginal-gain labels 让 Main V1 出现正信号，再做 streaming memory selector：
 
 ```text
 memory_{t-1}, x_t -> gain_t -> memory_t
