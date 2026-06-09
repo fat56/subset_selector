@@ -182,18 +182,18 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage
 
 ### 正式 hardlabel300 cache
 
-当前正式 cache 断点：
+正式 cache 状态：
 
 - Total jobs: `2700`
-- Ready jobs: `1706`
-- Missing jobs: `994`
-- Complete scenes: `108`
+- Ready jobs: `2700`
+- Missing jobs: `0`
+- Complete scenes: `300`
 - Cache root: `caches/vggt_omega/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300_images512`
-- Missing list: `runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/missing_cache_jobs_after_gpu_failure.json`
+- Cache size: 约 `167G`
 
-当前 CUDA 状态异常：`nvidia-smi` 只枚举到一张 RTX 5090，PyTorch CUDA 初始化报 `CUDA unknown error`。需要先恢复 GPU/driver 状态，再继续。
+历史说明：cache 过程中曾因 GPU/driver 状态异常中断，恢复后通过 `selector0005_richer_resume` 补齐，两个 worker 均 `failed=0`。
 
-GPU 恢复后，续跑缺失 cache：
+如需重新 resume，命令仍可复用；脚本会跳过已经 `cache_ready` 的 jobs：
 
 ```bash
 mkdir -p runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300_resume
@@ -218,6 +218,13 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage
   --skip-cache \
   --labels-only
 ```
+
+当前正式输出：
+
+- Labels: `runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_hardlabel_train_labels.csv`
+- Jobs: `runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_cache_jobs.json`
+- Diagnostic: `runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/full300_richer_diagnostic_summary.json`
+- Rows: `4500`
 
 ### Ready-only partial 诊断
 
@@ -270,7 +277,7 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage
 
 ## Richer300 正式训练
 
-缓存补全、merged labels 生成后，优先跑 DINOv2-S：
+已完成 DINOv2-S：
 
 ```bash
 tmux new-session -d -s selector0005_dinov2_richer300 '
@@ -295,7 +302,13 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage
 '
 ```
 
-ConvNeXt-Tiny 对照：
+结果：
+
+- Val `uniform_minus_learned_error = 0.0000`
+- Test `uniform_minus_learned_error = 0.0000`
+- Best checkpoint 选择 `uniform20` fallback。
+
+已完成 ConvNeXt-Tiny 对照：
 
 ```bash
 tmux new-session -d -s selector0005_convnext_richer300 '
@@ -319,6 +332,36 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage
   2>&1 | tee runs/0005_image_only_teacher_student_selector/main_v1_convnext_tiny_richer300/tmux.log
 '
 ```
+
+结果：
+
+- Val `uniform_minus_learned_error = -0.0215`
+- Test `uniform_minus_learned_error = 0.0000`
+- Test 选择 `uniform20` fallback。
+
+## Main V1 下一步: Uniform Fallback Gate
+
+richer300 证明 label pool 已经变宽，但 `memory_candidate_set` top-1 deviation 不可靠。下一步优先做 gate，而不是继续换 backbone。
+
+目标：
+
+- 默认选 `uniform20`。
+- 只有当最佳 non-uniform candidate 分数超过 `uniform20` 分数至少 `margin` 时才偏离。
+- 在 val 上 sweep `margin`，用 test 验证是否真正超过 uniform。
+
+建议 sweep:
+
+```text
+margin in [0.00, 0.05, 0.10, 0.20, 0.30, 0.50, 0.80, 1.00]
+```
+
+通过条件：
+
+- Val `uniform_minus_learned_error > 0`
+- Test `uniform_minus_learned_error > 0`
+- Test deviation rate 不为极低偶然值。
+
+不通过则进入 Main V3 marginal-gain teacher。
 
 ## Main V2 计划
 

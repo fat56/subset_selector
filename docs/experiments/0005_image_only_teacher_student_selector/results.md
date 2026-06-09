@@ -95,17 +95,42 @@ Best-val checkpoint:
 - Run dir: `runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300`
 - Cache root: `caches/vggt_omega/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300_images512`
 - Total jobs: `2700 = 300 scenes * (1 full + 8 subset)`
-- 当前完成: `1706 / 2700`
-- 当前缺失: `994 / 2700`
-- 完整 scene: `108 / 300` 已具备 `full + 8 subset` 全部 cache。
-- Missing jobs list: `runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/missing_cache_jobs_after_gpu_failure.json`
-- 当前 cache 占用: 约 `105G`
+- 当前完成: `2700 / 2700`
+- 当前缺失: `0 / 2700`
+- 完整 scene: `300 / 300`
+- 当前 cache 占用: 约 `167G`
 
-阻塞原因：
+历史阻塞：
 
 - 正式 cache 过程中出现 `CUDA error: unspecified launch failure`。
 - 随后 `nvidia-smi` 只枚举到一张 RTX 5090，单卡 resume 又在 CUDA 初始化阶段报 `CUDA unknown error`。
-- 因此 richer-candidate 正式 labels 尚未完成，暂不能启动最终 richer-candidate selector training。
+- GPU/driver 恢复后已用 `selector0005_richer_resume` 补齐剩余 `994` jobs，两个 worker 均 `failed=0`。
+
+正式 merged labels:
+
+- Labels: `runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_hardlabel_train_labels.csv`
+- Jobs: `runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_cache_jobs.json`
+- Rows: `4500 = 300 scenes * (7 old candidates + 8 richer candidates)`
+- 数据分布: `DL3DV-ALL-480P = 150`, `wildrgbd_harrison = 150`
+- 诊断输出: `full300_richer_diagnostic_summary.json`
+
+Full300 oracle family:
+
+| Family | Oracle scenes |
+|---|---:|
+| `uniform_jitter20` | 192 |
+| `uniform20` | 52 |
+| `convnext_kcenter20` | 19 |
+| `random20` | 15 |
+| `dinov2_kcenter20` | 14 |
+| `motion_spread20` | 8 |
+
+关键判断：
+
+- `uniform20` oracle 从旧池的 `217/300` 降为 `52/300`。
+- richer-best 比 old-best 平均低 `0.4653` target_error。
+- richer candidates 在 `233/300` 个 scene 上优于旧候选池 best。
+- `uniform_minus_oracle_error = 0.8504`，说明 full300 richer labels 确实提供了更宽的 teacher margin。
 
 ## Ready108 Partial 诊断
 
@@ -150,6 +175,36 @@ DINOv2-S ready108 best checkpoint:
 - Test learned methods: `uniform20 = 5`, `uniform_jitter20 = 5`
 
 这个结果说明：一旦 candidate pool 不再过度偏向 `uniform20`，image-only student 至少可以在 partial set 上学到一点正向 deviation。正式结论仍需等 GPU 恢复后补全 `300` scene richer cache，再做双卡正式训练。
+
+## Richer300 正式训练
+
+完成两个 image-only backbone 的正式 richer300 双卡训练：
+
+| Run | Backbone | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---|---:|---:|---|
+| `main_v1_dinov2_vits14_richer300` | DINOv2-S/ViT-S | `0.0000` | `0.0000` | best-val 退回 `uniform20` |
+| `main_v1_convnext_tiny_richer300` | ConvNeXt-Tiny | `-0.0215` | `0.0000` | best-val 接近 uniform，test 退回 `uniform20` |
+
+DINOv2-S richer300:
+
+- Train/Val/Test learned methods at best checkpoint 均为 `uniform20`。
+- Val pairwise accuracy: `0.7111`
+- Test pairwise accuracy: `0.7205`
+- Val oracle: `uniform_jitter20 = 15`, `uniform20 = 9`, 其余 `6`
+- Test oracle: `uniform_jitter20 = 19`, `uniform20 = 10`, `convnext_kcenter20 = 1`
+
+ConvNeXt-Tiny richer300:
+
+- Val learned methods: `uniform20 = 27`, `uniform_jitter20 = 2`, `motion_spread20 = 1`
+- Test learned methods: `uniform20 = 30`
+- Val pairwise accuracy: `0.7214`
+- Test pairwise accuracy: `0.7346`
+
+结论：
+
+- richer labels 解决了候选池过窄的问题，但 `memory_candidate_set` 当前选择策略仍没有可靠超过 `uniform20`。
+- 模型能学到 pairwise ranking 信号，但 top-1 deviation 风险很高；训练中间 epoch 会大量偏向 `uniform_jitter20`，val error 反而变差。
+- 下一步不应继续只换 backbone，而应加入 `uniform fallback margin` 或 margin-aware gate：只有当 student 对非 uniform 候选有足够信心时才偏离 `uniform20`。
 
 ## 记录口径
 
