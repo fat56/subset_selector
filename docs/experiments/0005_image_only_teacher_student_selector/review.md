@@ -222,6 +222,28 @@ post-hoc gate scan 也没有找到可部署规则：val-selected gate 在 test �
 - 简单调 `uniform_gate_margin` 或加入 `uniform_advantage_loss` 不足以解决这个问题。
 - 下一步应把问题拆成两头：先训练 `advantage/gate head` 判断“是否值得偏离 uniform”，再在 gate 通过时选择候选；或者直接构建 step-level marginal-gain teacher。
 
+## Explicit Gate Head 复盘
+
+已完成第一版 binary advantage/gate head。它回答了一个更具体的问题：
+
+> 如果把“是否偏离 `uniform20`”单独建模，能不能解决 Main V4 的 calibration 失败？
+
+答案目前是否定的。显式 gate head 在 val 上能学出明显正收益，但 test 上仍然失败：
+
+| Run | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---|---:|---:|---|
+| `gate_head_aw1_gw05` | `gate_logit >= 1.0` | `+0.1120` | `-0.1174` | val/test 反转 |
+| `gate_head_pm05_aw05_gw1` | `gate_logit >= -1.0` | `+0.1303` | `-0.3096` | gate 更激进，test 更差 |
+
+这说明 Main V4 的失败不是“没有单独 gate head”这么简单。当前 300-scene split 上，student 可以拟合 val 里哪些 non-uniform 候选值得尝试，但这个规则到 held-out test 后会选错，尤其倾向选择不稳定的 `uniform_jitter20`。
+
+当前判断：
+
+- true swap-gain teacher 是有效的，label 方向不应被放弃。
+- global DINOv2-S embedding + scene-level memory 对三维 coverage 的表达可能不足，尤其缺少局部视角变化、可见性和运动跨度信息。
+- 300 scene 的 train/val/test 可能太小，val-selected gate 容易偶然对齐。
+- 下一步不建议继续只调 `advantage_weight` / `gate_weight`。更高价值的方向是扩大到更多 scene、做 dataset-balanced split robustness，或将 student 输入升级到 patch-summary / temporal motion proxy，再重新训练 gate。
+
 ## 当前风险
 
 - `uniform20` 是很强 baseline，本轮已确认 student 偏离后 val 变差。
@@ -235,4 +257,4 @@ post-hoc gate scan 也没有找到可部署规则：val-selected gate 在 test �
 - 保留 ConvNeXt-Tiny 和 DINOv2-S feature cache 作为后续 ablation 资产。
 - 保留 DINOv2-S gated `margin=0.2` 作为当前最好 image-only checkpoint。
 - 保留 true swap-gain labels/cache 作为下一版 gate/head 训练资产。
-- 若继续 0005，应优先做 binary advantage/gate head 或 step-level marginal-gain teacher，而不是继续调同一个 candidate-set top1 loss。
+- 若继续 0005，应优先做 larger/balanced split + patch/motion-aware gate，或 step-level marginal-gain teacher，而不是继续调同一个 candidate-set top1 loss。

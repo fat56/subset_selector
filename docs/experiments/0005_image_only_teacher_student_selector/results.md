@@ -2,7 +2,13 @@
 
 ## 当前状态
 
-`Main V1` 已完成第一轮 image-only hardlabel300 candidate-rank 实验：
+0005 已推进到 `Main V5 explicit gate head`。当前主结论是：
+
+- true swap-gain teacher label 有明确正信号，说明“围绕 `uniform20` 做局部替换”确实能产生更好的 fixed-K subset。
+- image-only student 仍然没有稳定超过 `uniform20`。显式 gate head 能在 val 上学出偏离 uniform 的规则，但 held-out test 变差。
+- 因此当前不推进 checkpoint 到下游 hard subset VGGT rerun；下一步应优先扩大/重切 split、引入更强的 geometry-aware image tokens，或构建 step-level marginal-gain teacher。
+
+历史上 `Main V1` 已完成第一轮 image-only hardlabel300 candidate-rank 实验：
 
 - `main_v1_convnext_tiny_candidate_rank`
 - `main_v1_dinov2_vits14_candidate_rank`
@@ -395,6 +401,37 @@ Oracle family:
 - 当前 `memory_candidate_set` student 能学到 ranking 信号，但不能可靠学习“何时偏离 `uniform20`”。
 - 继续调 `uniform-gate-margin`、post-hoc margin 或简单 advantage regression 的边际收益已经很低。
 - 下一步应转向显式 binary advantage/gate head 或真正 step-level marginal-gain teacher，而不是继续在同一 candidate-set top1 目标上加 loss。
+
+## Main V5: Explicit Gate Head
+
+为直接验证“先判断是否值得偏离 `uniform20`，再选择 non-uniform candidate”是否能解决 calibration，新增 `scripts/run_stage2_image_only_gate_head_training.py`。
+
+方法：
+
+- Backbone 仍使用 DINOv2-S/ViT-S image-only feature cache，不读取任何 VGGT-OMEGA token。
+- 网络复用 `memory_candidate_set` 的 latent memory contextualizer。
+- 对每个 candidate 输出两个量：`advantage = uniform20_error - candidate_error` 的回归值，以及 binary `gate_logit`。
+- 推理时默认选择 `uniform20`；只有最佳 non-uniform candidate 的 `advantage` 或 `gate_logit` 超过阈值才允许 deviation。
+- 阈值只在 val 上选择，然后固定评估 test。
+
+完成两个 full300 swap-gain 对照：
+
+| Run | Loss 设置 | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | Test deviation | 判断 |
+|---|---|---|---:|---:|---:|---|
+| `main_v5_dinov2_swapgain300_gate_head_aw1_gw05` | `advantage_weight=1.0`, `gate_weight=0.5`, `positive_margin=0.2` | `gate_logit >= 1.0` | `+0.1120` | `-0.1174` | `0.1333` | val 有明显正信号，test 失败 |
+| `main_v5_dinov2_swapgain300_gate_head_pm05_aw05_gw1` | `advantage_weight=0.5`, `gate_weight=1.0`, `positive_margin=0.5` | `gate_logit >= -1.0` | `+0.1303` | `-0.3096` | `0.4000` | 更强 gate loss 过度偏离，test 更差 |
+
+补充诊断：
+
+- `aw1_gw05` 的 val learned methods 是 `uniform20=23`, `uniform_jitter20=6`, `swapgain20=1`；test 是 `uniform20=26`, `uniform_jitter20=4`。
+- `pm05_aw05_gw1` 的 val learned methods 是 `uniform20=18`, `uniform_jitter20=10`, `motion_spread20=1`, `swapgain20=1`；test 是 `uniform20=18`, `uniform_jitter20=11`, `motion_spread20=1`。
+- 两个 run 的 test-oracle scan 最多只能回到 `uniform20`，即 test `uniform - learned = 0.0000`。
+
+结论：
+
+- 显式 gate head 确实比 Main V4 更会拟合 val：val 从 Main V4 最好 `+0.0359` 提高到 `+0.1303`。
+- 但这个提升没有泛化，test 仍然是负数；问题更像 split/domain calibration，而不是 gate head 表达力不足。
+- 继续在 300-scene fixed split 上调 gate loss 权重，风险很高；下一步更应该做 split robustness / larger scene set，或让 student 输入从 global embedding 升级到 patch-summary / motion-aware tokens。
 
 ## 记录口径
 

@@ -643,6 +643,107 @@ PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/e
 
 当前停止条件已满足：四个 full300 swap-gain run 的 val-selected gate 都没有在 held-out test 上超过 `uniform20`。下一步应换 objective，而不是继续重复同构训练。
 
+## Main V5 Explicit Gate Head
+
+新增脚本：
+
+```bash
+scripts/run_stage2_image_only_gate_head_training.py
+```
+
+目标：
+
+- 复用 image-only DINOv2-S features 和 `memory_candidate_set` contextualizer。
+- 对每个 candidate 显式预测 `advantage = uniform20_error - candidate_error`。
+- 同时训练 binary `gate_logit` 判断 non-uniform candidate 是否值得偏离 `uniform20`。
+- 推理时默认 `uniform20`，只有 gate/advantage 超过阈值才选择 non-uniform。
+
+Smoke：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0005_image_only_teacher_student_selector/smoke_gate_head_20 \
+  --limit-scenes 20 \
+  --epochs 3 \
+  --batch-size 4 \
+  --hidden-dim 128 \
+  --num-layers 1 \
+  --num-heads 4 \
+  --memory-slots 4 \
+  --train-devices cuda:0 \
+  --log-every-steps 1
+```
+
+正式 `advantage_weight=1.0`, `gate_weight=0.5`, `positive_margin=0.2`：
+
+```bash
+tmux new-session -d -s selector0005_gate_head_v5 '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+run_dir="runs/0005_image_only_teacher_student_selector/main_v5_dinov2_swapgain300_gate_head_aw1_gw05"
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir "$run_dir" \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:0,cuda:1 \
+  --advantage-weight 1.0 \
+  --gate-weight 0.5 \
+  --rank-weight 0.0 \
+  --positive-margin 0.2 \
+  --log-every-steps 20 \
+  2>&1 | tee "$run_dir/tmux.log"
+'
+```
+
+正式 `advantage_weight=0.5`, `gate_weight=1.0`, `positive_margin=0.5`：
+
+```bash
+tmux new-session -d -s selector0005_gate_head_v5_pm05 '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+run_dir="runs/0005_image_only_teacher_student_selector/main_v5_dinov2_swapgain300_gate_head_pm05_aw05_gw1"
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir "$run_dir" \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:0,cuda:1 \
+  --advantage-weight 0.5 \
+  --gate-weight 1.0 \
+  --rank-weight 0.0 \
+  --positive-margin 0.5 \
+  --log-every-steps 20 \
+  2>&1 | tee "$run_dir/tmux.log"
+'
+```
+
+结果：
+
+| Run suffix | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---|---:|---:|---|
+| `aw1_gw05` | `gate_logit >= 1.0` | `+0.1120` | `-0.1174` | val 正，test 失败 |
+| `pm05_aw05_gw1` | `gate_logit >= -1.0` | `+0.1303` | `-0.3096` | gate 过度偏离，test 更差 |
+
+当前结论：显式 gate head 能增强 val 拟合，但没有解决 held-out test calibration。继续沿同一 300-scene split 调 loss 权重意义不大，应转向 larger/balanced split 或 patch/motion-aware student。
+
 ## 输出目录
 
 建议：
