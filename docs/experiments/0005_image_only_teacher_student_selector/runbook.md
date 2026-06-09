@@ -905,6 +905,78 @@ PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/r
 
 Smoke 结论：新宽特征能被 gate-head 正常读取和训练。下一步跑 full300 feature cache，再复用 explicit gate head 做正式对照。
 
+### Full300 cache
+
+双卡 shard cache：
+
+```bash
+tmux new-session -d -s selector0005_patch_cache0 '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/prepare_stage2_image_only_selector_features.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --out-dir caches/image_features/0005/hardlabel300_dinov2_patch_summary_temporal \
+  --backbone dinov2_vits14_patch_summary \
+  --device cuda:0 \
+  --batch-size 32 \
+  --shard-count 2 \
+  --shard-index 0 \
+  --temporal-stats \
+  2>&1 | tee runs/0005_image_only_teacher_student_selector/main_v6_dinov2_patch_summary_feature_cache/shard0.log
+'
+```
+
+shard1 相同，仅替换 `--device cuda:1` 和 `--shard-index 1`。
+
+结果：
+
+- Files: `300`
+- Cache size: `125M`
+- Shard elapsed: `75.2s` / `76.5s`
+- Per-scene payload: `feature_dim=2304`, `stats_dim=16`
+
+### Full300 gate-head
+
+模板：
+
+```bash
+tmux new-session -d -s selector0005_v6_gate_s10 '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+run_dir="runs/0005_image_only_teacher_student_selector/main_v6_dinov2_patch_summary_temporal_gate_head_aw1_gw05_seed20260610"
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_patch_summary_temporal \
+  --run-dir "$run_dir" \
+  --seed 20260610 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:1 \
+  --advantage-weight 1.0 \
+  --gate-weight 0.5 \
+  --rank-weight 0.0 \
+  --positive-margin 0.2 \
+  --log-every-steps 20 \
+  2>&1 | tee "$run_dir/tmux.log"
+'
+```
+
+结果：
+
+| Seed | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | Test deviation |
+|---|---|---:|---:|---:|
+| `20260609` | `gate_logit >= -0.5` | `+0.0722` | `-0.0111` | `0.2000` |
+| `20260610` | `advantage >= 0.5` | `+0.0320` | `+0.0006` | `0.1333` |
+
+判断：patch summary + temporal stats 没有带来可靠正提升，只是让 gate 更保守。当前不继续堆 RGB feature summary。
+
 ## 输出目录
 
 建议：

@@ -275,6 +275,25 @@ post-hoc gate scan 也没有找到可部署规则：val-selected gate 在 test �
 
 因此下一步应停止单纯调 split/loss，进入 feature 侧改造：patch-summary、motion-aware frame stats、或者 coverage/diversity tokens。
 
+### Patch/Motion-Aware Feature 复盘
+
+新增 `dinov2_vits14_patch_summary + temporal_stats` 后，feature 侧链路跑通，但没有带来实质提升：
+
+| Run | Test `uniform - learned` | 判断 |
+|---|---:|---|
+| V5 global seed09 | `-0.1174` | baseline 负 |
+| V5 global seed10 | `+0.1163` | 单 seed 正，但 robustness 不足 |
+| V6 patch seed09 | `-0.0111` | 几乎回到 uniform |
+| V6 patch seed10 | `+0.0006` | 接近噪声 |
+
+这个结果很有用：它说明问题不是简单地“global feature 太窄，拼 patch 统计就能解决”。Patch summary 把 gate 变得更保守，减少了大幅负收益，但没有让 student 稳定选中真正有价值的 `swapgain20`。
+
+当前更可信的解释是：
+
+- Teacher 的正收益依赖具体 subset-level 几何相互作用，不容易从独立 frame summary 线性读出。
+- `uniform_jitter20` / `swapgain20` 的边界需要 step-level 或 set-coverage teacher，而不只是 frame descriptor 更宽。
+- 后续应把资源放在更真实的 marginal-gain label 或更多 labeled scenes，而不是继续堆 DINO patch summary 维度。
+
 ## 当前风险
 
 - `uniform20` 是很强 baseline，本轮已确认 student 偏离后 val 变差。

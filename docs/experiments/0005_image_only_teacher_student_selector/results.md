@@ -466,6 +466,37 @@ Oracle family:
 
 结论：扩大 val/test 没有让 explicit gate head 变成稳定成果。它会在某些 split 上更保守，但也可能被 val 选到过激规则。下一步不应继续只扩大 seed/split；更应升级 student 输入表示，例如 DINO patch summary、frame-to-frame motion proxy、coverage/diversity tokens。
 
+## Main V6: Patch/Motion-Aware Image Features
+
+为验证 global DINOv2-S embedding 是否丢失了局部视角/coverage 信息，新增 `dinov2_vits14_patch_summary` feature cache：
+
+- 每帧从 DINOv2-S/ViT-S `forward_features` 读取 `cls` 和 patch tokens。
+- `frame_features` 拼接 `cls`, patch mean/std, top-bottom, left-right, center-border summary，维度 `2304`。
+- `image_stats` 额外拼接 temporal stats：prev/next cosine、prev/next L2、scene-center L2、frame position，维度从 `10` 增到 `16`。
+- Student 仍然只读取 RGB-derived image features，不读取 VGGT-OMEGA。
+
+Full300 cache:
+
+- Feature cache: `caches/image_features/0005/hardlabel300_dinov2_patch_summary_temporal`
+- Scenes: `300`
+- Cache size: `125M`
+- 双卡 shard cache 耗时: `75.2s` / `76.5s`
+
+Gate-head 对照：
+
+| Run | Feature | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | Test deviation | 判断 |
+|---|---|---|---:|---:|---:|---|
+| `V5 global seed09` | global DINOv2-S | `gate_logit >= 1.0` | `+0.1120` | `-0.1174` | `0.1333` | baseline 负 |
+| `V5 global seed10` | global DINOv2-S | `advantage >= 0.05` | `+0.0811` | `+0.1163` | `0.6667` | 单 seed 正，但不稳 |
+| `V6 patch seed09` | patch summary + temporal stats | `gate_logit >= -0.5` | `+0.0722` | `-0.0111` | `0.2000` | 接近 uniform，但仍负 |
+| `V6 patch seed10` | patch summary + temporal stats | `advantage >= 0.5` | `+0.0320` | `+0.0006` | `0.1333` | 几乎回 uniform |
+
+结论：
+
+- Patch summary 没有复现 global seed10 的 `+0.1163`，反而显著压低 deviation。
+- 这说明更宽的 DINO patch 统计并没有直接解决 teacher decision boundary；它更像是让 gate 变保守。
+- 当前最可靠策略仍然接近 `uniform20` fallback。下一步若继续 0005，应优先做更真实的 step-level marginal-gain labels 或扩大 teacher-labeled scene set，而不是继续堆 RGB feature summary。
+
 ## 记录口径
 
 只有当 student 推理时不读取 VGGT-OMEGA tokens/features，结果才计入 0005。
