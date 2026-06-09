@@ -797,6 +797,51 @@ PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/r
 
 判断：gate head 有 split-dependent 正信号，但不能稳定泛化。下一步不应只继续加 seed，而应扩大 scene 数或升级 image-only feature 表示。
 
+### Larger val/test split
+
+现有 split 已按 dataset 分层。补跑 `train_fraction=0.60`, `val_fraction=0.20`，得到 train/val/test = `180/60/60`。
+
+模板：
+
+```bash
+tmux new-session -d -s selector0005_gate_6020_s10 '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+run_dir="runs/0005_image_only_teacher_student_selector/main_v5_dinov2_swapgain300_gate_head_aw1_gw05_split602020_seed20260610"
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir "$run_dir" \
+  --seed 20260610 \
+  --train-fraction 0.60 \
+  --val-fraction 0.20 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:1 \
+  --advantage-weight 1.0 \
+  --gate-weight 0.5 \
+  --rank-weight 0.0 \
+  --positive-margin 0.2 \
+  --log-every-steps 20 \
+  2>&1 | tee "$run_dir/tmux.log"
+'
+```
+
+结果：
+
+| Seed | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | Test deviation |
+|---|---|---:|---:|---:|
+| `20260609` | `gate_logit >= -3.0` | `+0.1918` | `-0.3775` | `0.9333` |
+| `20260610` | `advantage >= 0.5` | `+0.0781` | `+0.0056` | `0.1333` |
+
+判断：更大的 val/test 没有稳定解决 calibration。下一步转 feature 侧，不继续只调 split/loss。
+
 ## 输出目录
 
 建议：

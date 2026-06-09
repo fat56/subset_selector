@@ -453,6 +453,19 @@ Oracle family:
 
 结论：explicit gate head 有真实但不稳定的信号；当前不能作为可靠 selector。下一步应优先扩大 scene 数、做 dataset-balanced split，或增强 image-only 输入表示，而不是继续依据单个 seed 推进。
 
+### Larger Val/Test Split
+
+现有 split 逻辑已经按 dataset 分层；每个 dataset 单独 shuffle 后再切 train/val/test。因此进一步测试的是“把 val/test 从 30/30 scene 扩到 60/60 scene 是否能降低阈值选择偶然性”。
+
+设置：`train_fraction=0.60`, `val_fraction=0.20`，即 train/val/test = `180/60/60`。
+
+| Seed | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | Test deviation | 判断 |
+|---|---|---:|---:|---:|---|
+| `20260609` | `gate_logit >= -3.0` | `+0.1918` | `-0.3775` | `0.9333` | val 选到过激 deviation，test 失败 |
+| `20260610` | `advantage >= 0.5` | `+0.0781` | `+0.0056` | `0.1333` | 几乎退回 uniform，正幅度很小 |
+
+结论：扩大 val/test 没有让 explicit gate head 变成稳定成果。它会在某些 split 上更保守，但也可能被 val 选到过激规则。下一步不应继续只扩大 seed/split；更应升级 student 输入表示，例如 DINO patch summary、frame-to-frame motion proxy、coverage/diversity tokens。
+
 ## 记录口径
 
 只有当 student 推理时不读取 VGGT-OMEGA tokens/features，结果才计入 0005。

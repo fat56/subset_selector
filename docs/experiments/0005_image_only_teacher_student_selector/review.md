@@ -260,6 +260,21 @@ post-hoc gate scan 也没有找到可部署规则：val-selected gate 在 test �
 - 引入 patch-summary / motion-aware features，避免只靠 global DINOv2-S embedding。
 - 保留 explicit gate head 架构，但不要再只在 300-scene、同一 feature 上调 loss 权重。
 
+### Larger Val/Test 复盘
+
+现有 split 已按 dataset 分层，因此补跑的是更大的 val/test：`60/20/20`，即 train/val/test = `180/60/60`。
+
+结果仍不稳定：
+
+| Seed | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---:|---:|---|
+| `20260609` | `+0.1918` | `-0.3775` | val 选到几乎全偏离的 rule，test 大负 |
+| `20260610` | `+0.0781` | `+0.0056` | 近似回到 uniform，正幅度接近噪声 |
+
+这一步基本排除了“只要把 val 从 30 scene 扩到 60 scene 就能解决”的可能。gate head 的问题仍然是 image-only 表示和 teacher decision boundary 不够匹配：全局 DINO embedding 可以发现一部分 swap-gain 场景，但很容易把 `uniform_jitter20` 或过激 swap 误判成可靠提升。
+
+因此下一步应停止单纯调 split/loss，进入 feature 侧改造：patch-summary、motion-aware frame stats、或者 coverage/diversity tokens。
+
 ## 当前风险
 
 - `uniform20` 是很强 baseline，本轮已确认 student 偏离后 val 变差。
