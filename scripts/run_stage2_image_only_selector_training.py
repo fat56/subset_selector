@@ -493,6 +493,7 @@ def is_candidate_method(method: str, tag: str) -> bool:
         or method.startswith(f"random{tag}_")
         or method.startswith(f"contiguous{tag}_")
         or method.startswith(f"uniform_jitter{tag}_")
+        or method.startswith(f"swapgain{tag}_")
         or method.startswith(f"convnext_kcenter{tag}_")
         or method.startswith(f"dinov2_kcenter{tag}_")
         or method.startswith(f"motion_spread{tag}_")
@@ -1116,6 +1117,7 @@ def method_family(method: str, tag: str) -> str:
         f"random{tag}_",
         f"contiguous{tag}_",
         f"uniform_jitter{tag}_",
+        f"swapgain{tag}_",
         f"convnext_kcenter{tag}_",
         f"dinov2_kcenter{tag}_",
         f"motion_spread{tag}_",
