@@ -71,6 +71,9 @@ class ImageOnlyTrainConfig:
     min_target_gap: float = 0.02
     target_gap_scale: float = 1.0
     uniform_gate_margin: float = -1.0
+    uniform_advantage_weight: float = 0.0
+    uniform_advantage_scale: float = 1.0
+    uniform_advantage_clip: float = 4.0
     frame_target_mode: str = "none"
     frame_target_weight: float = 0.0
     frame_target_ridge: float = 1e-2
@@ -326,6 +329,14 @@ def main(argv: list[str] | None = None) -> int:
         default=-1.0,
         help="If >=0, CE targets uniform20 unless the oracle beats uniform20 by this target-error margin.",
     )
+    parser.add_argument(
+        "--uniform-advantage-weight",
+        type=float,
+        default=0.0,
+        help="Weight for regressing score margins to uniform-relative target_error advantage.",
+    )
+    parser.add_argument("--uniform-advantage-scale", type=float, default=1.0)
+    parser.add_argument("--uniform-advantage-clip", type=float, default=4.0)
     parser.add_argument("--frame-target-mode", choices=["none", "ridge_gain"], default="none")
     parser.add_argument("--frame-target-weight", type=float, default=0.0)
     parser.add_argument("--frame-target-ridge", type=float, default=1e-2)
@@ -365,6 +376,9 @@ def main(argv: list[str] | None = None) -> int:
         min_target_gap=args.min_target_gap,
         target_gap_scale=args.target_gap_scale,
         uniform_gate_margin=args.uniform_gate_margin,
+        uniform_advantage_weight=args.uniform_advantage_weight,
+        uniform_advantage_scale=args.uniform_advantage_scale,
+        uniform_advantage_clip=args.uniform_advantage_clip,
         frame_target_mode=args.frame_target_mode,
         frame_target_weight=args.frame_target_weight,
         frame_target_ridge=args.frame_target_ridge,
@@ -778,6 +792,7 @@ def train_selector(config: ImageOnlyTrainConfig, examples: list[SceneExample]) -
                             "rank_loss": round(stats["rank_loss"], 6),
                             "ce_loss": round(stats["ce_loss"], 6),
                             "coverage_loss": round(stats["coverage_loss"], 6),
+                            "uniform_advantage_loss": round(stats["uniform_advantage_loss"], 6),
                             "frame_target_loss": round(stats["frame_target_loss"], 6),
                             "pairwise_accuracy": round(stats["pairwise_accuracy"], 6),
                             "gate_oracle_rate": round(stats["gate_oracle_rate"], 6),
@@ -916,21 +931,48 @@ def hardnative_loss(
         gate_oracle_rate = scores.new_zeros(())
     ce_loss = F.cross_entropy(masked_scores, ce_indices)
     coverage_loss = coverage_regularizer(scores, candidate_valid, candidate_masks, frame_mask)
+    uniform_advantage_loss = compute_uniform_advantage_loss(
+        scores,
+        target_errors,
+        valid,
+        uniform_indices,
+        config,
+    )
     frame_target_loss = compute_frame_target_loss(model, batch, frame_targets, frame_mask, device, config)
     loss = (
         config.rank_weight * rank_loss
         + config.ce_weight * ce_loss
         + config.coverage_weight * coverage_loss
+        + config.uniform_advantage_weight * uniform_advantage_loss
         + config.frame_target_weight * frame_target_loss
     )
     return loss, {
         "rank_loss": float(rank_loss.detach().item()),
         "ce_loss": float(ce_loss.detach().item()),
         "coverage_loss": float(coverage_loss.detach().item()),
+        "uniform_advantage_loss": float(uniform_advantage_loss.detach().item()),
         "frame_target_loss": float(frame_target_loss.detach().item()),
         "pairwise_accuracy": float(pairwise_accuracy.detach().item()),
         "gate_oracle_rate": float(gate_oracle_rate.detach().item()),
     }
+
+
+def compute_uniform_advantage_loss(
+    scores: torch.Tensor,
+    target_errors: torch.Tensor,
+    valid: torch.Tensor,
+    uniform_indices: torch.Tensor,
+    config: ImageOnlyTrainConfig,
+) -> torch.Tensor:
+    if config.uniform_advantage_weight <= 0.0:
+        return scores.new_zeros(())
+    uniform_indices = uniform_indices.to(device=scores.device, dtype=torch.long)
+    uniform_scores = scores.gather(1, uniform_indices[:, None])
+    uniform_errors = target_errors.gather(1, uniform_indices[:, None])
+    predicted_advantage = scores - uniform_scores
+    target_advantage = (uniform_errors - target_errors) / max(config.uniform_advantage_scale, 1e-6)
+    target_advantage = target_advantage.clamp(-config.uniform_advantage_clip, config.uniform_advantage_clip)
+    return F.smooth_l1_loss(predicted_advantage[valid], target_advantage[valid])
 
 
 def compute_frame_target_loss(

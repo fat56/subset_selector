@@ -544,6 +544,105 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage
 
 结论：ridge 近似不能稳定超过 uniform；只有 candidate-set gated m=0.2 保留了 test `+0.0328` 的小正信号。若继续 Main V3，需要补跑 true step-gain cache，而不是继续调 frame-target weight。
 
+## True Swap-Gain Labels
+
+新增脚本：
+
+```bash
+scripts/run_stage2_image_only_swap_gain_labels.py
+```
+
+40-scene smoke：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_swap_gain_labels.py \
+  --run-dir runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_40 \
+  --cache-root caches/vggt_omega/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_40_images512 \
+  --limit-scenes 40 \
+  --single-swaps 2 \
+  --multi-swaps 2 \
+  --cache-devices cuda:0,cuda:1 \
+  --max-pixels-per-image 1024 \
+  --max-pointmap-points 60000
+```
+
+300-scene 正式打标：
+
+```bash
+tmux new-session -d -s selector0005_swap300 '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_swap_gain_labels.py \
+  --run-dir runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300 \
+  --cache-root caches/vggt_omega/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300_images512 \
+  --limit-scenes 300 \
+  --single-swaps 2 \
+  --multi-swaps 2 \
+  --cache-devices cuda:0,cuda:1 \
+  --max-pixels-per-image 1024 \
+  --max-pointmap-points 60000 \
+  2>&1 | tee runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/tmux.log
+'
+```
+
+正式输出：
+
+- Labels: `runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv`
+- Jobs: `runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json`
+- Diagnostics: `runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/swap_gain_diagnostics.json`
+
+关键诊断：
+
+- `swap_best_win_rate_vs_uniform = 0.7300`
+- `swap_oracle_rate = 0.2433`
+- `swapgain20` oracle scenes: `73 / 300`
+
+## Main V4 Swap-Gain 训练
+
+基础训练命令：
+
+```bash
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0005_image_only_teacher_student_selector/main_v4_dinov2_swapgain300_candidate_set_gated_m02 \
+  --model-kind memory_candidate_set \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:0,cuda:1 \
+  --uniform-gate-margin 0.2 \
+  --log-every-steps 10
+```
+
+Gate scan：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_stage2_image_only_selector_gate.py \
+  --run-dir runs/0005_image_only_teacher_student_selector/main_v4_dinov2_swapgain300_candidate_set_gated_m02 \
+  --device cuda:0 \
+  --batch-size 32 \
+  --out runs/0005_image_only_teacher_student_selector/main_v4_dinov2_swapgain300_candidate_set_gated_m02/uniform_gate_scan.json
+```
+
+已完成对照：
+
+| Run suffix | Extra args | 结果 |
+|---|---|---|
+| `gated_m02` | `--uniform-gate-margin 0.2` | val `+0.0095`, test `-0.3055` |
+| `gated_m05` | `--uniform-gate-margin 0.5` | val `-0.0020`, test `-0.0087` |
+| `gated_m10` | `--uniform-gate-margin 1.0` | val `+0.0359`, test `-0.0910` |
+| `gated_m05_adv02` | `--uniform-gate-margin 0.5 --uniform-advantage-weight 0.2` | val `+0.0037`, test `-0.5211` |
+
+`uniform_advantage_weight` 会让 candidate score 相对 `uniform20` 的 margin 拟合 `uniform20_error - candidate_error`。这版是负例，当前不建议继续沿这个 loss 调权重。
+
+当前停止条件已满足：四个 full300 swap-gain run 的 val-selected gate 都没有在 held-out test 上超过 `uniform20`。下一步应换 objective，而不是继续重复同构训练。
+
 ## 输出目录
 
 建议：

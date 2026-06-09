@@ -332,6 +332,70 @@ target 诊断：
 - 当前最好结果仍是 `memory_candidate_set + uniform-gated margin=0.2`，test `+0.0328`。
 - 真正的 Main V3 需要补跑 `S + i` 或 small beam candidate cache，得到显式 step-level teacher gain。
 
+## True Swap-Gain Candidates
+
+为验证“围绕 `uniform20` 做局部替换是否能提供更接近 marginal gain 的 teacher”，新增 `scripts/run_stage2_image_only_swap_gain_labels.py`。
+
+方法：
+
+- 以每个 scene 的 `uniform20` 为 base subset。
+- 用 DINOv2-S image-only feature 在 cheap feature space 中寻找和 uniform base 差异大的候选帧。
+- 构造两类 fixed-K swap candidate：单帧替换 `swapgain20_dino1_rank000/001`，双帧替换 `swapgain20_dino2_seed000/001`。
+- 对这些 subset 跑 VGGT-native metric，合并到 richer300 labels；student 输入仍然只用 image-only DINOv2 features。
+
+300-scene 打标结果：
+
+- Run dir: `runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300`
+- Cache root: `caches/vggt_omega/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300_images512`
+- 新增 VGGT cache jobs: `1200 = 300 scenes * 4 swap candidates`
+- 合并后 labels: `5700 = 300 scenes * 19 candidates`
+- 新增 cache size: 约 `52G`
+
+Oracle family:
+
+| Family | Oracle scenes |
+|---|---:|
+| `uniform_jitter20` | `155` |
+| `swapgain20` | `73` |
+| `uniform20` | `29` |
+| `convnext_kcenter20` | `14` |
+| `random20` | `13` |
+| `dinov2_kcenter20` | `10` |
+| `motion_spread20` | `6` |
+
+关键诊断：
+
+- `swap_best_win_rate_vs_uniform = 0.7300`
+- `swap_oracle_rate = 0.2433`
+- `uniform_minus_best_swap_mean = +0.3637`
+
+结论：true swap-gain candidate 本身有明确 teacher 信号；问题已经不再是候选池完全没有 non-uniform 正例，而是 student 是否能稳定判断哪些 scene 值得偏离 `uniform20`。
+
+## Main V4: Swap-Gain Student
+
+在 300-scene true swap-gain labels 上完成 DINOv2-S `memory_candidate_set` 训练和保守 gate 对照：
+
+| Run | 设置 | Raw Val `uniform - learned` | Raw Test `uniform - learned` | Val-selected gate Test | 判断 |
+|---|---|---:|---:|---:|---|
+| `main_v4_dinov2_swapgain300_candidate_set_gated_m02` | `uniform_gate_margin=0.2` | `+0.0095` | `-0.3055` | `-0.1680` | 过度偏离，test 失败 |
+| `main_v4_dinov2_swapgain300_candidate_set_gated_m05` | `uniform_gate_margin=0.5` | `-0.0020` | `-0.0087` | `-0.0151` | 基本退回 uniform，但仍略负 |
+| `main_v4_dinov2_swapgain300_candidate_set_gated_m10` | `uniform_gate_margin=1.0` | `+0.0359` | `-0.0910` | `-0.0910` | val 小正，test 失败 |
+| `main_v4_dinov2_swapgain300_candidate_set_gated_m05_adv02` | `margin=0.5`, `uniform_advantage_weight=0.2` | `+0.0037` | `-0.5211` | `-0.2149` | advantage calibration 失败 |
+
+补充：
+
+- 所有 run 的 test-oracle gate scan 最多只能回到 `uniform20`，即 test `uniform - learned = 0.0000`。
+- `m=0.2` raw best 在 val 上选 `uniform_jitter20=19`, `swapgain20=3`, `uniform20=7`；test 上仍偏向 `uniform_jitter20=16`，导致平均 worse than uniform。
+- `m=0.5` 只在 val/test 各偏离 `uniform20` 一次，已经非常保守，但仍没有正收益。
+- `uniform_advantage_loss` 让 score margin 拟合 `uniform_error - candidate_error`，但没有改善 test，说明简单 score-scale regression 不足以解决 calibration。
+
+当前结论：
+
+- true swap-gain labels 证明了局部替换 candidate 有价值。
+- 当前 `memory_candidate_set` student 能学到 ranking 信号，但不能可靠学习“何时偏离 `uniform20`”。
+- 继续调 `uniform-gate-margin`、post-hoc margin 或简单 advantage regression 的边际收益已经很低。
+- 下一步应转向显式 binary advantage/gate head 或真正 step-level marginal-gain teacher，而不是继续在同一 candidate-set top1 目标上加 loss。
+
 ## 记录口径
 
 只有当 student 推理时不读取 VGGT-OMEGA tokens/features，结果才计入 0005。

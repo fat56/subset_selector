@@ -185,6 +185,43 @@ target 分布显示这个 proxy 较噪：`mean=-1.0240`，`std=2.4872`，`positi
 
 结论：不能继续依赖现有候选的线性反解来代表 marginal gain；下一步如果还要推进 Main V3，应补跑小规模 true step-gain cache，而不是只调 ridge 权重。
 
+## True Swap-Gain 复盘
+
+为了更接近真实 marginal-gain，我们补跑了围绕 `uniform20` 的 VGGT-native swap candidates：
+
+- `swapgain20_dino1_rank000/001`: 用 DINOv2-S feature 找到与 uniform base 差异大的候选帧，做单帧替换。
+- `swapgain20_dino2_seed000/001`: 做双帧替换。
+- 每个 scene 新增 `4` 个 subset，300 scene 共新增 `1200` 个 VGGT cache jobs。
+
+300-scene label 诊断是正面的：
+
+| 指标 | 数值 |
+|---|---:|
+| `swap_best_win_rate_vs_uniform` | `0.7300` |
+| `swap_oracle_rate` | `0.2433` |
+| `uniform_minus_best_swap_mean` | `+0.3637` |
+| `swapgain20` oracle scenes | `73 / 300` |
+
+这说明“局部替换 uniform subset”确实能造出比 `uniform20` 更好的候选，teacher 不是空信号。
+
+但 Main V4 student 仍没有泛化：
+
+| Run | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---:|---:|---|
+| `swapgain300_gated_m02` | `+0.0095` | `-0.3055` | 过度偏离 |
+| `swapgain300_gated_m05` | `-0.0020` | `-0.0087` | 近似 uniform，但略负 |
+| `swapgain300_gated_m10` | `+0.0359` | `-0.0910` | val/test 反转 |
+| `swapgain300_gated_m05_adv02` | `+0.0037` | `-0.5211` | advantage regression 失败 |
+
+post-hoc gate scan 也没有找到可部署规则：val-selected gate 在 test 上均为负；test-oracle scan 最多回到 `uniform20`，即 test `0.0000`。
+
+当前判断：
+
+- 0005 的 teacher label 方向是有信号的，尤其是 true swap-gain。
+- 失败点在 student calibration：模型知道一些 candidate ranking，但不知道何时该相信 non-uniform。
+- 简单调 `uniform_gate_margin` 或加入 `uniform_advantage_loss` 不足以解决这个问题。
+- 下一步应把问题拆成两头：先训练 `advantage/gate head` 判断“是否值得偏离 uniform”，再在 gate 通过时选择候选；或者直接构建 step-level marginal-gain teacher。
+
 ## 当前风险
 
 - `uniform20` 是很强 baseline，本轮已确认 student 偏离后 val 变差。
@@ -197,4 +234,5 @@ target 分布显示这个 proxy 较噪：`mean=-1.0240`，`std=2.4872`，`positi
 - 不把本轮 checkpoint 推进到 hard subset VGGT rerun。
 - 保留 ConvNeXt-Tiny 和 DINOv2-S feature cache 作为后续 ablation 资产。
 - 保留 DINOv2-S gated `margin=0.2` 作为当前最好 image-only checkpoint。
-- 若继续 0005，应做小规模 true step-gain cache；否则先暂停 image-only selector，重新设计 teacher。
+- 保留 true swap-gain labels/cache 作为下一版 gate/head 训练资产。
+- 若继续 0005，应优先做 binary advantage/gate head 或 step-level marginal-gain teacher，而不是继续调同一个 candidate-set top1 loss。
