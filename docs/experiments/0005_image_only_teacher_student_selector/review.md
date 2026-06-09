@@ -113,8 +113,41 @@ ready108 partial 曾给过一个小正信号：
 
 - 不再继续只换 backbone 或增加 epoch。
 - 对 `memory_candidate_set` 加 `uniform fallback margin` / margin-aware gate：只有非 uniform 分数超过 `uniform20` 足够多时才允许 deviation。
-- 对已有 checkpoints 做 gate sweep，确认是否存在稳定正 test margin。
+- 已对已有 checkpoints 做 post-hoc gate sweep，未找到稳定可推广 margin。
 - 如果 gate sweep 仍失败，再进入 Main V3 marginal-gain teacher，而不是继续堆 `memory_candidate_set` 容量。
+
+## Uniform Gate 结果
+
+post-hoc gate sweep 的结论偏负面：
+
+| Run | Val-selected rule | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---|---:|---:|---|
+| DINOv2-S richer300 | `last`, margin `6.5008` | `+0.0016` | `-0.1196` | 不可推广 |
+| ConvNeXt-Tiny richer300 | `best_uniform_improvement`, margin `0.2` | `+0.0165` | `0.0000` | test 回 uniform |
+
+DINOv2-S 的 test oracle scan 能找到 `+0.0174`，但对应 val 为 `-0.0432`，所以不能作为可部署 gate。这个结果说明问题不只是阈值没调好，而是 score calibration 本身没有学会“值得偏离 uniform 的条件”。
+
+因此下一步应该把保守性放进训练目标，而不是只做推理后处理：
+
+- 对 non-uniform oracle 只有当它比 `uniform20` 好过 teacher margin 时才加 CE。
+- 对没有明显优势的 scene 强制 uniform fallback。
+- 或直接改为 Main V3 marginal-gain teacher，把每次加入 frame 的增益作为监督。
+
+已完成 uniform-gated loss 正式训练：
+
+| Run | Margin | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---:|---:|---:|---|
+| DINOv2-S gated | `0.2` | `+0.0005` | `+0.0328` | 有轻微信号 |
+| DINOv2-S gated | `0.5` | `+0.0166` | `-0.6146` | 失败 |
+| ConvNeXt-Tiny gated | `0.2` | `0.0000` | `0.0000` | 回到 uniform |
+
+DINOv2-S `margin=0.2` 是 Main V1 目前最好的结果，但 val 只比 uniform 好 `+0.0005`，而且 val-selected post-hoc gate 的 test 变成 `-0.0105`。所以它可以作为一个“方法方向有信号”的 checkpoint，不应作为最终 selector 推进。
+
+当前判断：
+
+- `uniform-gated` 比纯 post-hoc gate 更合理，能让 test 出现 `+0.0328` 的小正收益。
+- 但 Main V1 的整组候选 top-1 分类仍然 calibration 不稳。
+- 下一支应切到 Main V3 `marginal-gain teacher`：训练 student 预测“把某帧加入当前 subset 后，对 teacher score 的边际增益”，再用 greedy/beam 选 topK。
 
 ## 当前风险
 
@@ -127,5 +160,5 @@ ready108 partial 曾给过一个小正信号：
 
 - 不把本轮 checkpoint 推进到 hard subset VGGT rerun。
 - 保留 ConvNeXt-Tiny 和 DINOv2-S feature cache 作为后续 ablation 资产。
-- 基于 richer300 labels 做 `uniform fallback margin` 训练/评估。
-- 若 margin gate 不能让 held-out test 超过 uniform，则转向 Main V3 marginal-gain teacher。
+- 保留 DINOv2-S gated `margin=0.2` 作为当前最好 image-only checkpoint。
+- 转向 Main V3 marginal-gain teacher，而不是继续增加 Main V1 epoch/capacity。

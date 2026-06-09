@@ -363,6 +363,82 @@ margin in [0.00, 0.05, 0.10, 0.20, 0.30, 0.50, 0.80, 1.00]
 
 不通过则进入 Main V3 marginal-gain teacher。
 
+当前 post-hoc gate sweep 已完成：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_stage2_image_only_selector_gate.py \
+  --run-dir runs/0005_image_only_teacher_student_selector/main_v1_dinov2_vits14_richer300 \
+  --device cuda:0 \
+  --batch-size 32 \
+  --out runs/0005_image_only_teacher_student_selector/main_v1_dinov2_vits14_richer300/uniform_gate_scan.json
+
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_stage2_image_only_selector_gate.py \
+  --run-dir runs/0005_image_only_teacher_student_selector/main_v1_convnext_tiny_richer300 \
+  --device cuda:1 \
+  --batch-size 32 \
+  --out runs/0005_image_only_teacher_student_selector/main_v1_convnext_tiny_richer300/uniform_gate_scan.json
+```
+
+结果：
+
+- DINOv2-S val-selected gate: val `+0.0016`, test `-0.1196`
+- ConvNeXt-Tiny val-selected gate: val `+0.0165`, test `0.0000`
+
+判断：post-hoc gate 不足以稳定超过 uniform。下一步应改训练 loss。
+
+## Main V1: Uniform-Gated Loss
+
+已新增训练设置：
+
+```text
+uniform_gate_margin = 0.10 or 0.20
+oracle CE only if oracle_error + margin < uniform_error
+otherwise CE target = uniform20
+pairwise loss keeps all clear pairwise preferences
+```
+
+实际运行时用了本地队列脚本作为 run artifact：
+
+```bash
+bash runs/0005_image_only_teacher_student_selector/run_gated_queue.sh
+```
+
+该脚本不进入 git；核心命令如下。优先跑 DINOv2-S，因为 ready108 和 richer300 pairwise accuracy 都略好：
+
+```bash
+tmux new-session -d -s selector0005_gated_queue '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0005_image_only_teacher_student_selector/main_v1_dinov2_vits14_richer300_gated \
+  --model-kind memory_candidate_set \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 60 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:0,cuda:1 \
+  --uniform-gate-margin 0.2 \
+  --log-every-steps 10 \
+  2>&1 | tee runs/0005_image_only_teacher_student_selector/main_v1_dinov2_vits14_richer300_gated/tmux.log
+'
+```
+
+完成 runs：
+
+| Run | Margin | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---:|---:|---:|---|
+| `main_v1_dinov2_vits14_richer300_gated_m02` | `0.2` | `+0.0005` | `+0.0328` | 当前最好，但幅度小 |
+| `main_v1_dinov2_vits14_richer300_gated_m05` | `0.5` | `+0.0166` | `-0.6146` | 失败 |
+| `main_v1_convnext_tiny_richer300_gated_m02` | `0.2` | `0.0000` | `0.0000` | 退回 uniform |
+
+结论：Main V1 有小正信号，但不够稳定。下一步转向 Main V3 `marginal-gain teacher`。
+
 ## Main V2 计划
 
 如果 richer candidates / marginal-gain labels 让 Main V1 出现正信号，再做 streaming memory selector：

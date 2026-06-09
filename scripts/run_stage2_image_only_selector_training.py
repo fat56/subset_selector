@@ -70,6 +70,7 @@ class ImageOnlyTrainConfig:
     coverage_weight: float = 0.05
     min_target_gap: float = 0.02
     target_gap_scale: float = 1.0
+    uniform_gate_margin: float = -1.0
     num_workers: int = 0
     eval_every_epochs: int = 1
     log_every_steps: int = 20
@@ -295,6 +296,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--coverage-weight", type=float, default=0.05)
     parser.add_argument("--min-target-gap", type=float, default=0.02)
     parser.add_argument("--target-gap-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--uniform-gate-margin",
+        type=float,
+        default=-1.0,
+        help="If >=0, CE targets uniform20 unless the oracle beats uniform20 by this target-error margin.",
+    )
     parser.add_argument("--train-devices", default="cuda:0,cuda:1")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--eval-every-epochs", type=int, default=1)
@@ -329,6 +336,7 @@ def main(argv: list[str] | None = None) -> int:
         coverage_weight=args.coverage_weight,
         min_target_gap=args.min_target_gap,
         target_gap_scale=args.target_gap_scale,
+        uniform_gate_margin=args.uniform_gate_margin,
         num_workers=args.num_workers,
         eval_every_epochs=args.eval_every_epochs,
         log_every_steps=args.log_every_steps,
@@ -562,6 +570,7 @@ def collate_candidate_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
     candidate_valid = torch.zeros((batch_size, max_candidates), dtype=torch.bool)
     target_errors = torch.full((batch_size, max_candidates), 0.0, dtype=torch.float32)
     mean_pool_cosines = torch.full((batch_size, max_candidates), 0.0, dtype=torch.float32)
+    uniform_indices = torch.zeros((batch_size,), dtype=torch.long)
     methods = []
     for row, item in enumerate(items):
         frame_count = item["features"].shape[0]
@@ -572,6 +581,7 @@ def collate_candidate_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
         candidate_valid[row, :candidate_count] = True
         target_errors[row, :candidate_count] = item["target_errors"]
         mean_pool_cosines[row, :candidate_count] = item["mean_pool_cosines"]
+        uniform_indices[row] = find_uniform_index(item["methods"])
         methods.append(item["methods"])
     return {
         "features": features,
@@ -580,11 +590,19 @@ def collate_candidate_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
         "candidate_valid": candidate_valid,
         "target_errors": target_errors,
         "mean_pool_cosines": mean_pool_cosines,
+        "uniform_indices": uniform_indices,
         "scene_ids": [item["scene_id"] for item in items],
         "scene_keys": [item["scene_key"] for item in items],
         "datasets": [item["dataset"] for item in items],
         "methods": methods,
     }
+
+
+def find_uniform_index(methods: list[str]) -> int:
+    exact_index = next((index for index, method in enumerate(methods) if method == "uniform20"), None)
+    if exact_index is not None:
+        return exact_index
+    return next((index for index, method in enumerate(methods) if method.startswith("uniform") and "_" not in method), 0)
 
 
 def train_selector(config: ImageOnlyTrainConfig, examples: list[SceneExample]) -> dict[str, Any]:
@@ -643,7 +661,16 @@ def train_selector(config: ImageOnlyTrainConfig, examples: list[SceneExample]) -
             candidate_valid = batch["candidate_valid"].to(device, non_blocking=True)
             candidate_masks = batch["candidate_masks"].to(device, non_blocking=True)
             frame_mask = batch["frame_mask"].to(device, non_blocking=True)
-            loss, stats = hardnative_loss(scores, target_errors, candidate_valid, candidate_masks, frame_mask, config)
+            uniform_indices = batch["uniform_indices"].to(device, non_blocking=True)
+            loss, stats = hardnative_loss(
+                scores,
+                target_errors,
+                candidate_valid,
+                candidate_masks,
+                frame_mask,
+                uniform_indices,
+                config,
+            )
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -664,6 +691,7 @@ def train_selector(config: ImageOnlyTrainConfig, examples: list[SceneExample]) -
                             "ce_loss": round(stats["ce_loss"], 6),
                             "coverage_loss": round(stats["coverage_loss"], 6),
                             "pairwise_accuracy": round(stats["pairwise_accuracy"], 6),
+                            "gate_oracle_rate": round(stats["gate_oracle_rate"], 6),
                             "steps_per_sec": round(steps_per_sec, 4),
                             "eta_sec": round(eta, 1),
                         },
@@ -750,6 +778,7 @@ def hardnative_loss(
     candidate_valid: torch.Tensor,
     candidate_masks: torch.Tensor,
     frame_mask: torch.Tensor,
+    uniform_indices: torch.Tensor,
     config: ImageOnlyTrainConfig,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     valid = candidate_valid.to(dtype=torch.bool, device=scores.device)
@@ -772,7 +801,17 @@ def hardnative_loss(
 
     masked_scores = scores.masked_fill(~valid, torch.finfo(scores.dtype).min)
     best_indices = target_errors.masked_fill(~valid, float("inf")).argmin(dim=1)
-    ce_loss = F.cross_entropy(masked_scores, best_indices)
+    if config.uniform_gate_margin >= 0.0:
+        uniform_indices = uniform_indices.to(device=scores.device, dtype=torch.long)
+        best_errors = target_errors.gather(1, best_indices[:, None]).squeeze(1)
+        uniform_errors = target_errors.gather(1, uniform_indices[:, None]).squeeze(1)
+        use_oracle = best_errors + config.uniform_gate_margin < uniform_errors
+        ce_indices = torch.where(use_oracle, best_indices, uniform_indices)
+        gate_oracle_rate = use_oracle.float().mean()
+    else:
+        ce_indices = best_indices
+        gate_oracle_rate = scores.new_zeros(())
+    ce_loss = F.cross_entropy(masked_scores, ce_indices)
     coverage_loss = coverage_regularizer(scores, candidate_valid, candidate_masks, frame_mask)
     loss = config.rank_weight * rank_loss + config.ce_weight * ce_loss + config.coverage_weight * coverage_loss
     return loss, {
@@ -780,6 +819,7 @@ def hardnative_loss(
         "ce_loss": float(ce_loss.detach().item()),
         "coverage_loss": float(coverage_loss.detach().item()),
         "pairwise_accuracy": float(pairwise_accuracy.detach().item()),
+        "gate_oracle_rate": float(gate_oracle_rate.detach().item()),
     }
 
 

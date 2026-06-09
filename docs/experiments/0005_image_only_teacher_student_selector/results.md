@@ -206,6 +206,74 @@ ConvNeXt-Tiny richer300:
 - 模型能学到 pairwise ranking 信号，但 top-1 deviation 风险很高；训练中间 epoch 会大量偏向 `uniform_jitter20`，val error 反而变差。
 - 下一步不应继续只换 backbone，而应加入 `uniform fallback margin` 或 margin-aware gate：只有当 student 对非 uniform 候选有足够信心时才偏离 `uniform20`。
 
+## Uniform Fallback Gate Sweep
+
+已实现 gate sweep:
+
+- Script: `scripts/evaluate_stage2_image_only_selector_gate.py`
+- DINOv2-S output: `runs/0005_image_only_teacher_student_selector/main_v1_dinov2_vits14_richer300/uniform_gate_scan.json`
+- ConvNeXt-Tiny output: `runs/0005_image_only_teacher_student_selector/main_v1_convnext_tiny_richer300/uniform_gate_scan.json`
+
+方法：
+
+- 对 `best_uniform_improvement.pt`、`best_val_error.pt`、`last.pt` 分别评估。
+- 默认选择 `uniform20`。
+- 若最佳 non-uniform score 超过 `uniform20` score 至少 `margin`，才允许 deviation。
+- 在 val 上选 margin，再看 test。
+
+结果：
+
+| Run | Val-selected checkpoint / margin | Val `uniform - learned` | Test `uniform - learned` | 判断 |
+|---|---|---:|---:|---|
+| DINOv2-S richer300 | `last`, margin `6.5008` | `+0.0016` | `-0.1196` | val 微弱正，test 失败 |
+| ConvNeXt-Tiny richer300 | `best_uniform_improvement`, margin `0.2` | `+0.0165` | `0.0000` | val 微弱正，test 回 uniform |
+
+Oracle-scan 只能找到不可靠信号：
+
+- DINOv2-S 若直接按 test oracle scan，可得到 `+0.0174`，但对应 val 是 `-0.0432`，不能作为可推广策略。
+- ConvNeXt-Tiny 的 test oracle scan 仍为 `0.0000`。
+
+结论：
+
+- 简单 post-hoc `uniform fallback margin` 不能稳定解决 calibration。
+- 当前分数尺度没有把“何时值得偏离 uniform”学出来。
+- 下一步需要在训练目标里显式加入 `uniform-gated` / margin-aware loss，而不只是推理时扫阈值。
+
+## Uniform-Gated Loss
+
+已在 `scripts/run_stage2_image_only_selector_training.py` 加入 `--uniform-gate-margin`：
+
+- 若 `oracle_error + margin < uniform20_error`，CE target 使用 oracle candidate。
+- 否则 CE target 回到 `uniform20`。
+- pairwise rank loss 仍保留所有明确优劣关系。
+
+正式跑了三组 richer300：
+
+| Run | Gate margin | Raw Val `uniform - learned` | Raw Test `uniform - learned` | Val-selected gate Test | 判断 |
+|---|---:|---:|---:|---:|---|
+| `main_v1_dinov2_vits14_richer300_gated_m02` | `0.2` | `+0.0005` | `+0.0328` | `-0.0105` | 有轻微信号，但 gate sweep 不稳 |
+| `main_v1_dinov2_vits14_richer300_gated_m05` | `0.5` | `+0.0166` | `-0.6146` | `-0.3997` | 过度偏离，失败 |
+| `main_v1_convnext_tiny_richer300_gated_m02` | `0.2` | `0.0000` | `0.0000` | `0.0000` | 完全退回 uniform |
+
+DINOv2-S `margin=0.2` 是目前 Main V1 最好的 checkpoint：
+
+- Val learned methods: `uniform20 = 21`, `uniform_jitter20 = 9`
+- Test learned methods: `uniform20 = 24`, `uniform_jitter20 = 6`
+- Test `uniform - learned = +0.0328`
+- Test oracle top1 rate: `0.4000`
+
+但这个提升还不够稳：
+
+- Val 正幅度只有 `+0.0005`，接近噪声。
+- post-hoc gate 在 val 上选到更高 `+0.0394` 后，test 变成 `-0.0105`。
+- `margin=0.5` 和 ConvNeXt 对照都没有保持正收益。
+
+结论：
+
+- 把保守性写入训练目标确实比单纯 post-hoc gate 更有希望。
+- 但 Main V1 的 candidate-set classifier 仍没有稳定学会“何时偏离 uniform”。
+- 0005 下一步应转向 Main V3 `marginal-gain teacher`，让 student 学每帧对当前集合的增益，而不是直接在整组候选里做 top-1 分类。
+
 ## 记录口径
 
 只有当 student 推理时不读取 VGGT-OMEGA tokens/features，结果才计入 0005。
