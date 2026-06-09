@@ -274,6 +274,33 @@ DINOv2-S `margin=0.2` 是目前 Main V1 最好的 checkpoint：
 - 但 Main V1 的 candidate-set classifier 仍没有稳定学会“何时偏离 uniform”。
 - 0005 下一步应转向 Main V3 `marginal-gain teacher`，让 student 学每帧对当前集合的增益，而不是直接在整组候选里做 top-1 分类。
 
+## Frame-Score Baseline
+
+为了验证“逐帧打分”是否更稳，复用了训练脚本里的 `memory_frame_score` 模式：
+
+- Run: `main_v3_dinov2_vits14_frame_score_gated_m02`
+- Backbone: DINOv2-S/ViT-S image-only feature
+- Loss: `uniform-gated`, margin `0.2`
+- 模型输出每帧 score，候选集合 score 是 selected frames 的平均 score。
+
+结果：
+
+| Run | Model kind | Val `uniform - learned` | Test `uniform - learned` | Val pairwise | Test pairwise | 判断 |
+|---|---|---:|---:|---:|---:|---|
+| `main_v1_dinov2_vits14_richer300_gated_m02` | `memory_candidate_set` | `+0.0005` | `+0.0328` | `0.7281` | `0.7249` | 当前最好 |
+| `main_v3_dinov2_vits14_frame_score_gated_m02` | `memory_frame_score` | `0.0000` | `0.0000` | `0.6951` | `0.7275` | 回到 uniform |
+
+frame-score 的 val-selected post-hoc gate:
+
+- Val `uniform - learned = +0.0130`
+- Test `uniform - learned = 0.0000`
+
+结论：
+
+- 单纯 per-frame average scorer 没有超过 candidate-set scorer。
+- 这支持一个判断：selector 需要 coverage/diversity-aware set reasoning，不能只给每帧独立质量分。
+- 下一版 Main V3 应构建真正的 marginal-gain teacher：用已有 richer candidate cache 先做 greedy/beam 近似，再决定是否补跑更多 VGGT candidate cache。
+
 ## 记录口径
 
 只有当 student 推理时不读取 VGGT-OMEGA tokens/features，结果才计入 0005。

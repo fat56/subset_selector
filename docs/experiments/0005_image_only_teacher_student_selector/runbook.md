@@ -454,11 +454,61 @@ memory_{t-1}, x_t -> gain_t -> memory_t
 
 ## Main V3 计划
 
-如果 streaming selector 有希望，再构建 greedy marginal-gain teacher：
+已完成第一版 frame-score 对照：
+
+```bash
+tmux new-session -d -s selector0005_m3_framescore '
+cd /home/m/project/ltm/selector &&
+set -euo pipefail &&
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/richer_candidates_hardlabel300/merged_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0005_image_only_teacher_student_selector/main_v3_dinov2_vits14_frame_score_gated_m02 \
+  --model-kind memory_frame_score \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --epochs 60 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --train-devices cuda:0,cuda:1 \
+  --uniform-gate-margin 0.2 \
+  --log-every-steps 10
+'
+```
+
+结果：
+
+- Val `uniform - learned = 0.0000`
+- Test `uniform - learned = 0.0000`
+- 结论：单纯 frame-score average 不足以超过 uniform。
+
+下一步构建 greedy marginal-gain teacher：
 
 - 对每个 scene 生成 candidate pool。
 - 用 teacher score 估计每张图加入当前集合的 gain。
 - 训练 student 预测 gain。
+
+第一版不立刻补跑大规模 VGGT cache，而是复用 richer300 已有候选：
+
+```text
+candidate pool = uniform20 + uniform_jitter20_seed000-004 + random20_seed000-004
+                 + contiguous20 + motion_spread20 + convnext_kcenter20 + dinov2_kcenter20
+teacher utility = -target_error
+student target = 在同一 scene 中，让高 utility candidates 覆盖的 frames 得到更高 marginal proxy
+```
+
+如果这个近似 teacher 能让 held-out test 稳定超过 `uniform20`，再进入 true marginal-gain cache：
+
+```text
+S_0 = empty or uniform prefix
+for t in 1..K:
+  sample M candidate additions i not in S
+  run/cache VGGT for S + i
+  label gain_i = utility(S + i) - utility(S)
+```
 
 ## 输出目录
 

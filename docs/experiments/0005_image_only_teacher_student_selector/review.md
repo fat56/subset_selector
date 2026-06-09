@@ -149,6 +149,23 @@ DINOv2-S `margin=0.2` 是 Main V1 目前最好的结果，但 val 只比 uniform
 - 但 Main V1 的整组候选 top-1 分类仍然 calibration 不稳。
 - 下一支应切到 Main V3 `marginal-gain teacher`：训练 student 预测“把某帧加入当前 subset 后，对 teacher score 的边际增益”，再用 greedy/beam 选 topK。
 
+## Frame-Score 对照
+
+已跑 `memory_frame_score` 对照：
+
+| Run | Val `uniform - learned` | Test `uniform - learned` | Val pairwise | Test pairwise | 判断 |
+|---|---:|---:|---:|---:|---|
+| Candidate-set DINOv2 gated m=0.2 | `+0.0005` | `+0.0328` | `0.7281` | `0.7249` | 当前最好 |
+| Frame-score DINOv2 gated m=0.2 | `0.0000` | `0.0000` | `0.6951` | `0.7275` | 回到 uniform |
+
+frame-score 的候选 score 是 selected frame scores 的平均值，它没有学出稳定 deviation。这个对照说明问题不是“把输出粒度从 candidate 改成 frame 就会自然变好”，而是需要显式表示 coverage/diversity 或 marginal gain。
+
+下一版 Main V3 需要更接近子模优化：
+
+- 用已有 richer candidate cache 构造 greedy/beam teacher。
+- 监督每一步 `S -> S + i` 的增益，而不是只监督最终候选 top1。
+- 若离线近似有正信号，再补跑更多 candidate cache 做 true teacher。
+
 ## 当前风险
 
 - `uniform20` 是很强 baseline，本轮已确认 student 偏离后 val 变差。
