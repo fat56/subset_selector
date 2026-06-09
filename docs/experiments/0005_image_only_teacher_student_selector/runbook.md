@@ -842,6 +842,69 @@ PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/r
 
 判断：更大的 val/test 没有稳定解决 calibration。下一步转 feature 侧，不继续只调 split/loss。
 
+## Main V6 Patch/Motion-Aware Features
+
+新增 feature cache 选项：
+
+```bash
+--backbone dinov2_vits14_patch_summary
+--temporal-stats
+```
+
+方法：
+
+- `dinov2_vits14_patch_summary` 仍然只使用原始 RGB 图像，不读取 VGGT-OMEGA。
+- 每帧从 DINOv2-S/ViT-S `forward_features` 读取 `x_norm_clstoken` 和 `x_norm_patchtokens`。
+- `frame_features` 拼接 `cls`, patch mean/std, top-bottom, left-right, center-border summary，维度 `2304`。
+- `--temporal-stats` 在 `image_stats` 里额外加入 prev/next cosine、prev/next L2、scene-center L2、frame position，当前 `stats_dim=16`。
+- 训练脚本不需要改，因为 dataset 会自动拼接 `frame_features + image_stats`。
+
+Feature smoke：
+
+```bash
+PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/prepare_stage2_image_only_selector_features.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --out-dir caches/image_features/0005/smoke20_dinov2_patch_summary_temporal \
+  --backbone dinov2_vits14_patch_summary \
+  --device cuda:0 \
+  --batch-size 32 \
+  --limit-scenes 20 \
+  --temporal-stats \
+  --force
+```
+
+Smoke 输出：
+
+- `feature_dim = 2304`
+- `stats_dim = 16`
+- `feature_kind = image_only_no_vggt_tokens`
+- `20` scenes cache elapsed: `9.2s`
+
+Gate-head smoke：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0005_image_only_teacher_student_selector/swap_gain_uniform20_dinov2_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/smoke20_dinov2_patch_summary_temporal \
+  --run-dir runs/0005_image_only_teacher_student_selector/smoke20_gate_head_dinov2_patch_summary_temporal \
+  --limit-scenes 20 \
+  --epochs 3 \
+  --batch-size 4 \
+  --hidden-dim 128 \
+  --num-layers 1 \
+  --num-heads 4 \
+  --memory-slots 4 \
+  --train-devices cuda:0 \
+  --advantage-weight 1.0 \
+  --gate-weight 0.5 \
+  --positive-margin 0.2 \
+  --log-every-steps 1
+```
+
+Smoke 结论：新宽特征能被 gate-head 正常读取和训练。下一步跑 full300 feature cache，再复用 explicit gate head 做正式对照。
+
 ## 输出目录
 
 建议：
