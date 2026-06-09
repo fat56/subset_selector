@@ -1,14 +1,14 @@
-# Stage 2 Fixed-K Selector Main V1 Manifest 摘要
+# Stage 2 固定 K Selector Main V1 Manifest 摘要
 
 - 创建日期: 2026-06-08
 - 入选 scenes: 2138
 - 总 frames: 105204
-- Cache policy: cache-light selector_features.pt; no depth/depth_conf/full dense VGGT outputs
-- ScanNet source: Use data/raw/ltm_datasets/yifei_scannetv2_hf for ScanNet.
+- Cache 策略: cache-light `selector_features.pt`；不保存 `depth`、`depth_conf` 或 full dense VGGT outputs。
+- ScanNet 来源: 使用 `data/raw/ltm_datasets/yifei_scannetv2_hf`。
 
 ## 可用 Scene 统计
 
-| Dataset | Available | Selected |
+| 数据集 | 可用 scenes | 入选 scenes |
 |---|---:|---:|
 | bonn | 26 | 26 |
 | bridgedata_v2 | 25446 | 1000 |

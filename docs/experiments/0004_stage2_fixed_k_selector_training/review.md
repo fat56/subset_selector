@@ -1,8 +1,8 @@
-# Review
+# 复盘
 
-## Decision
+## 决策
 
-Do not promote `main_v1_meanpool_selector` beyond proxy validation.
+暂不把 `main_v1_meanpool_selector` 推进到 proxy validation 之后的阶段。
 
 `0003_stage2_readout_calibration` 已经证明 learned readout 的 embedding diagnostic 可以明显提升，但 single unified checkpoint 仍未稳定通过严格 gate：hardlabel300 2-layer best embedding 为 `0.6063`，4-layer 降到 `0.5822`，而 conservative mean-pooled register baseline 为 `0.5200`。因此 `0004/main_v1` 不把 learned readout 作为依赖，先用 mean-pooled register cosine 训练 selector。
 
@@ -16,7 +16,7 @@ Do not promote `main_v1_meanpool_selector` beyond proxy validation.
 - 下游 3DGS/FastGS 验算继续放一边；当前 proxy 对照已经足够说明 `main_v1` 不值得直接下游验算。
 - 下一步应补更有判别力的 objective，例如 baseline ranking、hard native labels、或把 `0003` 的 learned readout evidence 作为 auxiliary signal。
 
-## Evidence
+## 证据
 
 `main_v1` 已生成：
 
@@ -36,14 +36,14 @@ Do not promote `main_v1_meanpool_selector` beyond proxy validation.
 
 `main_v1` 结果：
 
-- Feature cache: `2138/2138` scenes 成功，`0` failed。
-- Training: `20` epochs, `2160` steps, training elapsed `94.94` sec。
+- Feature cache: `2138/2138` scenes 成功，`0` 失败。
+- Training: `20` epochs, `2160` steps, 训练耗时 `94.94` 秒。
 - `best_hard_proxy.pt`: epoch 18, val hard proxy cosine `0.969982`。
 - `best_soft.pt` / `last.pt`: epoch 20, val soft cosine `0.993935`, hard proxy cosine `0.965243`。
 
-Proxy baseline on val:
+Val 上的 proxy baseline:
 
-| Method | Mean Hard Proxy Cosine |
+| 方法 | Mean hard proxy cosine |
 |---|---:|
 | uniform stride | 0.999042 |
 | random 20%, 5 seeds | 0.993221 |
@@ -52,13 +52,13 @@ Proxy baseline on val:
 
 这个对照说明 mean-pooled register proxy 对均匀覆盖过于友好，无法证明 learned selector 比朴素策略更好。
 
-## Next Actions
+## 下一步
 
 - 保留 `main_v1` 作为 framework/proxy negative result。
 - 跑 `main_v2_baseline_rank_selector`：复用 `main_v1` compact cache，用 uniform/random baseline-aware objective 训练。
 - 对 `main_v2` 先跑同样 cache-only proxy baseline，只有超过 uniform/random 后再进入 hard subset VGGT rerun。
 
-## Main V2 Result
+## Main V2 结果
 
 `main_v2` 没有引入新的 VGGT cache 或 3DGS 验算。它只回答一个更小的问题：learned selector 能不能在 mean-register proxy 上至少追平 uniform/random。
 
@@ -92,7 +92,7 @@ Promotion gate:
 - soft-hard gap 已经很小，说明问题不是 relaxation，而是 mean-register proxy 本身对 uniform coverage 过于友好。
 - 下一步不应继续在同一个 proxy 上堆训练轮次；应该换更强 supervision，例如 hard native labels、候选 subset ranking、register-k-center 对照，或 `0003` learned-readout auxiliary。
 
-## Main V3 Direction
+## Main V3 方向
 
 `main_v3` 已切换到 `0003` hard-native candidate ranking：
 

@@ -1,25 +1,25 @@
-# Stage 2 Fixed-K Selector Training
+# Stage 2 固定 K Selector 训练
 
-## Metadata
+## 元数据
 
-- Experiment ID: `0004_stage2_fixed_k_selector_training`
+- 实验 ID: `0004_stage2_fixed_k_selector_training`
 - Stage: `stage2`
-- Status: implementation-ready / main_v1 starting
-- Created: 2026-06-05
-- Updated: 2026-06-08
-- Config: `configs/experiments/0004_stage2_fixed_k_selector_training.yaml`
-- Main manifest: `docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json`
-- Depends on: `0001_stage1_register_quality_gate`, `0002_ltm30_pose_depth_validation`, `0003_stage2_readout_calibration`
+- 状态: implementation-ready / main_v1 starting
+- 创建日期: 2026-06-05
+- 更新日期: 2026-06-08
+- 配置: `configs/experiments/0004_stage2_fixed_k_selector_training.yaml`
+- 主 manifest: `docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json`
+- 依赖: `0001_stage1_register_quality_gate`, `0002_ltm30_pose_depth_validation`, `0003_stage2_readout_calibration`
 
-## Question
+## 问题
 
 在 `0003_stage2_readout_calibration` 明确采用 mean pooling 或 frozen readout 之后，能否训练一个固定预算 selector，在相同 `K` 或相同 ratio 下稳定选出比 random、uniform、feature k-center、register k-center 更好的图像子集？
 
-## Hypothesis
+## 假设
 
 如果 VGGT-OMEGA register/readout embedding 是有效的场景级几何 proxy，那么一个带上下文建模的 set selector 可以从每帧特征中学习到 coverage、overlap、清晰度和视角互补性，并在固定 `K` 下得到比手工规则更高的 hard-subset VGGT-native consistency 与后续 FastGS 重建质量。
 
-## Scope
+## 范围
 
 本实验已经进入第一版实现。`main_v1` 先训练固定 `20%` ratio 的 selector，目标是得到一个可用的 selector checkpoint 和 proxy diagnostics；hard subset VGGT 重跑和 FastGS/3DGS 下游验算暂时后置，不阻塞本轮 selector 网络训练。
 
@@ -40,7 +40,7 @@
 
 `main_v1` 数据规模：
 
-| Dataset | Source | Available scenes | Selected scenes |
+| 数据集 | 来源 | 可用 scenes | 入选 scenes |
 |---|---|---:|---:|
 | `bridgedata_v2` | `data/processed/bridgedata_v2` | 25446 | 1000 |
 | `nyuv2` | `data/processed/nyuv2` | 549 | 549 |
@@ -75,7 +75,7 @@ Split 和帧数：
 - 把 `val_hard_minus_uniform` 作为 primary diagnostic。
 - 仍然不进入 hard subset VGGT 或 FastGS/3DGS，除非 cache-only proxy 先过关。
 
-Objective:
+Objective 定义：
 
 ```text
 L = 0.2 * L_pos
@@ -97,8 +97,8 @@ L = 0.2 * L_pos
 
 数据来源：
 
-- Label: `runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv`
-- Image-list/job map: `runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json`
+- Label 文件: `runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv`
+- Image-list/job 映射: `runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/cache_jobs.json`
 - Token cache: `caches/vggt_omega/0003_stage2_readout_calibration/hardlabel300_full100_80_images512`
 - 候选集合：`uniform20`、`random20_seed000-004`、`contiguous20_seed000`
 - Scenes: `300`，其中 DL3DV `150`、WildRGBD `150`
@@ -125,13 +125,13 @@ L = 0.2 * L_pos
 
 评估口径：
 
-- Primary: `uniform_minus_learned_error = mean(target_error_uniform20) - mean(target_error_learned)`，大于 `0` 表示 learned 比 uniform 更好。
-- Secondary: `learned_regret`、`regret_reduction_vs_uniform`、`win_rate_vs_uniform`、`oracle_top1_rate`、`pairwise_accuracy`。
+- Primary metric: `uniform_minus_learned_error = mean(target_error_uniform20) - mean(target_error_learned)`，大于 `0` 表示 learned 比 uniform 更好。
+- Secondary metrics: `learned_regret`、`regret_reduction_vs_uniform`、`win_rate_vs_uniform`、`oracle_top1_rate`、`pairwise_accuracy`。
 - Baselines: `uniform20`、`random20_mean`、`random20_best_of_5`、`contiguous20`、`mean_pool_register_cosine_candidate_select`、`oracle_best_labeled_candidate`。
 
-## Recommended Architecture
+## 推荐架构
 
-### High-Level Flow
+### 高层流程
 
 ```text
 full scene images
@@ -148,15 +148,15 @@ per-image cached features
     -> z_soft
 
 topK(s_i)
-    -> selected images sorted by original order
+    -> 按原始顺序排序 selected images
     -> frozen VGGT-OMEGA
     -> locked RegisterReadoutHead
-    -> z_hard for validation
+    -> 用于 validation 的 z_hard
 ```
 
 关键建议：第一版把 VGGT-OMEGA 冻结，把 `0003_stage2_readout_calibration` 选定的 readout 或 mean-pooling objective 也冻结。不要一开始让 readout 和 selector 同时自由漂移，否则 `z_full` 目标会变动，正样本 cosine loss 容易失去约束力。
 
-### Per-Image Feature
+### 单图特征
 
 MVP 输入每张图一个 `x_i`：
 
@@ -183,7 +183,7 @@ x_i = concat(
 - camera center、view direction、relative baseline statistics。
 - image matching degree、co-visibility score、depth confidence statistics。
 
-### Feature Projector
+### 特征投影器
 
 ```text
 x_i
@@ -197,7 +197,7 @@ x_i
 
 `d_model=512` 是第一版建议。显存紧张可降到 `256`，但不建议第一版低于 `256`，否则 set context 和 scoring head 容量可能不足。
 
-### SetSelector Context Encoder
+### SetSelector 上下文编码器
 
 推荐第一版使用 Transformer/Set Transformer 风格 encoder：
 
@@ -219,7 +219,7 @@ projected tokens [B, N, 512]
 
 如果 `N` 很大，训练时先将每个 scene 限制到 `N_train_max=100-300` 的 dense teacher set。超过上限时用 uniform pre-sampling 或 Stage 1 强 baseline 预筛，验证时再看 full scene 版本。
 
-### Score Head
+### 打分头
 
 ```text
 h_i
@@ -256,11 +256,11 @@ tokens
 
 第一版推荐 `1` 个 readout token、`2` 层 attention、输出维度 `256` 或 `512`。如果 Stage 1 显示单 embedding 对局部细节不敏感，再尝试 `4` 个 readout slots 后 pooling。
 
-## Differentiability Plan
+## 可微训练方案
 
 hard top-K 后重新运行 VGGT-OMEGA 是离散前向，loss 不能真实反传到“被选图片索引”。因此 Stage 2 第一版不要假装是完整端到端离散训练。推荐使用双路径：
 
-### Training Path: Soft-Token Proxy
+### 训练路径: soft-token proxy
 
 selector 输出 scores 后，用 relaxed top-K 得到连续 mask：
 
@@ -279,7 +279,7 @@ z_soft = RegisterReadoutHead(weighted_tokens)
 
 这个路径让 loss 可以反传到 selector，适合 warmup 和主训练。
 
-### Validation Path: Hard Subset
+### 验证路径: hard subset
 
 定期执行：
 
@@ -291,7 +291,7 @@ z_hard = RegisterReadoutHead(VGGT-OMEGA(selected images))
 
 `z_hard` 是真正要看的指标来源。Stage 2 的 gate 以 hard subset 的 FastGS/3DGS 结果为准，而不是只看 `z_soft`。
 
-### Optional Hard-Aware Refinement
+### 可选 hard-aware refinement
 
 如果 `z_soft` 很好但 `z_hard` 明显差，优先加候选子集 ranking/imitation，而不是立刻上 RL：
 
@@ -306,7 +306,7 @@ L_rank = max(0, margin - score(S_good) + score(S_bad))
 
 这个 refinement 不需要穿过离散 VGGT 前向，工程上比 policy gradient 稳定。
 
-## Loss Design
+## Loss 设计
 
 本节是 loss menu，不是第一版全部启用的 recipe。Stage 2 的第一版目标应该尽量小，先验证 selector 能不能用最直接的 embedding distillation 学到有效选择策略。
 
@@ -350,7 +350,7 @@ w_red = 0 unless selected frames cluster too much
 w_quality = 0 unless blur/quality failures dominate
 ```
 
-设计原则：VGGT/VGGT-OMEGA 的训练 loss 用来学习几何 foundation model；这里的 selector loss 用来学习“选哪些图”。因此 coverage、redundancy、quality 这些项不是为了复刻 VGGT 训练，而是给 subset selection 的常见失败模式准备的补救约束。
+设计原则：VGGT/VGGT-OMEGA 的训练 loss 用来学习几何 foundation model；这里的 selector loss 用来学习“选哪些图”。因此 coverage、redundancy、quality 这些项不是为了复刻 VGGT 训练，而是给 subset selection 的常见失败模式准备补救约束。
 
 ### Symmetric InfoNCE
 
@@ -363,7 +363,7 @@ L_nce = 0.5 * CE(sim, diag_labels) + 0.5 * CE(sim.T, diag_labels)
 
 作用：让 subset embedding 匹配同 scene 的 full embedding，并避开 batch 内其他 scene。
 
-### Positive Cosine Distillation
+### 正样本 cosine 蒸馏
 
 ```text
 L_pos = mean_i 1 - cosine(z_soft_i, stopgrad(z_full_i))
@@ -371,7 +371,7 @@ L_pos = mean_i 1 - cosine(z_soft_i, stopgrad(z_full_i))
 
 作用：稳定正样本对齐，避免 InfoNCE 被 false negative 或小 batch 噪声主导。`z_full` 建议 stop-gradient，尤其在 readout 未完全冻结时。
 
-### Cardinality Loss
+### 数量约束 loss
 
 固定 `K` 时不需要稀疏 loss，但 relaxed mask 可能不严格等于 `K`：
 
@@ -381,7 +381,7 @@ L_card = ((sum_i m_i - K) / K)^2
 
 如果使用严格 relaxed top-K 且 `sum_i m_i = K`，这一项可以关掉。
 
-### Coverage Loss
+### 覆盖度 loss
 
 用 selector 输入特征或单独 coverage projection `c_i` 计算相似度，鼓励被选集合覆盖全 scene：
 
@@ -392,7 +392,7 @@ L_cov = -Coverage
 
 `max_soft` 可用 logsumexp 近似。它比单纯 diversity 更贴近“每张未选图都能被某张已选图代表”的目标。
 
-### Redundancy Penalty
+### 冗余惩罚
 
 防止 top-K 全落在一段相似帧：
 
@@ -402,7 +402,7 @@ L_red = sum_{i != j} m_i * m_j * relu(cosine(c_i, c_j) - delta) / K^2
 
 第一版可先关掉，若观察到连续帧扎堆再启用。
 
-### Quality Loss
+### 质量 loss
 
 如果有 blur/texture/depth-confidence 等质量分 `q_i`：
 
@@ -412,7 +412,7 @@ L_quality = - sum_i m_i * q_i / K
 
 这只是辅助项，权重必须小。否则 selector 可能只选清晰但几何覆盖不足的图。
 
-### Geometry Auxiliary Loss
+### 几何辅助 loss
 
 第一版不建议启用 depth/pose/point-map loss。原因是本阶段优先验证最核心假设：`z_subset` 接近 `z_full` 是否足以带来更好的重建子集。过早加入 depth loss 会把问题变成“用 VGGT depth pseudo-label 训练 selector”，同时引入 scale alignment、valid mask、动态区域、full/subset 上下文差异等额外复杂性。
 
@@ -423,7 +423,7 @@ L_quality = - sum_i m_i * q_i / K
 - point-map scale-aligned consistency。
 - matching/overlap proxy loss。
 
-## Training Schedule
+## 训练流程
 
 1. `Stage 2.0 Readout Lock`，仅当 Stage 1 没有锁定 readout 时执行。训练 readout 区分不同 scene、对齐同 scene 的 full/dense subset，然后冻结。
 2. `Stage 2.1 Soft Selector Warmup`，用 soft-token proxy 训练 selector。temperature 从 `1.0` 逐步降到 `0.2`。
@@ -431,31 +431,31 @@ L_quality = - sum_i m_i * q_i / K
 4. `Stage 2.3 FastGS Validation`，对少量 val scenes 跑 FastGS/3DGS，比较 learned selector 和 Stage 1 baselines。
 5. `Stage 2.4 Hard-Aware Refinement`，仅当 soft/hard gap 明显时启用候选子集 ranking。
 
-## Metrics
+## 指标
 
-Primary hard metrics:
+主要 hard metrics:
 
-- FastGS PSNR/SSIM/LPIPS at fixed `K` or fixed ratio。
+- 固定 `K` 或固定 ratio 下的 FastGS PSNR/SSIM/LPIPS。
 - hard-subset `register_cosine_similarity = cosine(z_hard, z_full)`。
-- win rate versus random/uniform/feature-k-center/register-k-center。
+- 相对 random/uniform/feature-k-center/register-k-center 的 win rate。
 
-Training diagnostics:
+训练诊断:
 
-- `z_soft` cosine vs `z_full`。
+- `z_soft` 与 `z_full` 的 cosine。
 - soft-to-hard gap: `cos(z_soft, z_full) - cos(z_hard, z_full)`。
-- retrieval top-1 accuracy under symmetric InfoNCE。
+- symmetric InfoNCE 下的 retrieval top-1 accuracy。
 - selected-frame coverage score。
-- selected indices distribution over time。
+- selected indices 的时间分布。
 - duplicate/near-duplicate selection rate。
 
-Efficiency:
+效率指标:
 
-- selector inference time。
-- VGGT-OMEGA hard subset inference time。
-- FastGS train time。
-- subset size and ratio。
+- selector 推理时间。
+- VGGT-OMEGA hard subset 推理时间。
+- FastGS 训练时间。
+- subset size 与 ratio。
 
-## Decision Rule
+## 决策规则
 
 Stage 2 通过建议：
 
@@ -470,7 +470,7 @@ Stage 2 通过建议：
 - 如果 hard register cosine 好但 FastGS 差，优先加入 coverage/geometry auxiliary，而不是继续加 selector 容量。
 - 如果 learned selector 打不过 k-center/register-k-center，先保留 learned selector 作为 negative result，不进入 Stage 3。
 
-## Risks
+## 风险
 
 - `readout` 与 selector 同训导致目标漂移。缓解：先锁定 readout，`z_full` stop-gradient。
 - soft-token proxy 与 hard subset 存在 gap。缓解：定期 hard validation，必要时加候选子集 ranking。

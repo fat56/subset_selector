@@ -1,4 +1,4 @@
-# Runbook
+# 运行手册
 
 ## 当前状态
 
@@ -6,11 +6,11 @@
 
 关键路径：
 
-- Config: `configs/experiments/0004_stage2_fixed_k_selector_training.yaml`
+- 配置: `configs/experiments/0004_stage2_fixed_k_selector_training.yaml`
 - Manifest: `docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_manifest.json`
-- Manifest summary: `docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_summary.md`
-- Cache root: `caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512`
-- Run dir: `runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector`
+- Manifest 摘要: `docs/experiments/0004_stage2_fixed_k_selector_training/main_v1_summary.md`
+- Cache 根目录: `caches/vggt_omega/0004_stage2_fixed_k_selector_training/main_v1_features512`
+- 运行目录: `runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector`
 
 ## 前置条件
 
@@ -20,7 +20,7 @@
 - 双卡训练默认使用 `cuda:0,cuda:1`。
 - 本轮不生成 `depth.pt`、`depth_conf.pt` 或 dense VGGT output cache。
 
-## 生成 Manifest
+## 生成 manifest
 
 ```bash
 python scripts/prepare_stage2_selector_main_v1.py --manifest-stem main_v1
@@ -28,7 +28,7 @@ python scripts/prepare_stage2_selector_main_v1.py --manifest-stem main_v1
 
 当前 `main_v1` 统计：
 
-| Dataset | Selected scenes |
+| 数据集 | 入选 scenes |
 |---|---:|
 | `bridgedata_v2` | 1000 |
 | `nyuv2` | 549 |
@@ -95,14 +95,14 @@ tmux ls
 tmux capture-pane -pt selector0004_main_v1:0 -S -80
 ```
 
-Feature cache logs:
+Feature cache 日志:
 
 ```bash
 tail -n 20 runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/feature_cache_cuda0.log
 tail -n 20 runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/feature_cache_cuda1.log
 ```
 
-Training log:
+训练日志:
 
 ```bash
 tail -n 50 runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/tmux.log
@@ -127,7 +127,7 @@ tail -n 50 runs/0004_stage2_fixed_k_selector_training/main_v1_meanpool_selector/
 - `summary.json`: 训练摘要。
 - `train_config.json` 和 `config.json`: 训练参数记录。
 
-## Proxy Baseline Eval
+## Proxy baseline 评估
 
 训练后用同一份 compact cache 评估 learned selector 与简单 baselines：
 
@@ -145,7 +145,7 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_
 
 当前 `main_v1` 的 val proxy 对照显示 learned topK 低于 uniform/random，因此不进入 hard subset VGGT 或 FastGS/3DGS 验算。
 
-## Main V2 Baseline-Rank Run
+## Main V2 baseline-rank 运行
 
 `main_v2` 复用 `main_v1` compact cache，不重新跑 VGGT：
 
@@ -193,7 +193,7 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_
 
 当前完整 run 已完成：`best_margin.pt` 的 `hard_minus_uniform = -0.000087`，未过 promotion gate，但已经明显高于 random。
 
-## Main V3 Hard-Native Candidate Ranking
+## Main V3 hard-native candidate ranking 运行
 
 `main_v3` 不再用 mean-register proxy cosine 作为训练目标，而是复用 `0003` hardlabel300 的 VGGT-native pseudo-label。它在每个 scene 内比较 `uniform20`、`random20_seed000-004`、`contiguous20_seed000` 这些已重跑过 VGGT 的候选子集，训练 selector 预测哪个候选的 `target_error` 更低。
 
@@ -287,7 +287,7 @@ PYTHONPATH=src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage
 '
 ```
 
-Rank-only small `candidate_set` 对照：
+小型 rank-only `candidate_set` 对照：
 
 ```bash
 mkdir -p runs/0004_stage2_fixed_k_selector_training/main_v3_rankonly_small_candidate_selector_cuda0
