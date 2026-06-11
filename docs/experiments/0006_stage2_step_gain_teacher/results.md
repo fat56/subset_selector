@@ -133,3 +133,40 @@ Oracle family：
 - Patch-summary temporal feature 比 frame-score ridge-gain 略有希望，至少 seed `20260610` 在 val-selected test 上为正。
 - 但 seed `20260609` 仍为负，且 test-oracle 均值低于 global DINO gate-head 的 `+0.1221`。
 - 目前不能把 patch-temporal gate 视为稳定成果。下一步改为在 gate-head 中加入 pairwise ranking loss，强制模型保留 dense candidates 间的顺序信息，而不是只做 advantage/gate 回归。
+
+## Gate-head student: patch-summary temporal + rank loss
+
+第四轮保持 patch-summary temporal DINO 输入，在 explicit gate-head 中加入 `rank_weight=0.2`，希望保留 dense candidates 之间的 pairwise order。
+
+| Seed | Val 选择规则 | Val Δ | Test Δ | Test win | Test deviation | Test 选择分布 | Test-oracle Δ |
+|---:|---|---:|---:|---:|---:|---|---:|
+| `20260609` | `advantage@0.05` | `+0.0571` | `-0.2408` | `0.200` | `0.667` | `uniform20=10, swapgain20=20` | `0.0000` |
+| `20260610` | `advantage@1.0` | `+0.0263` | `+0.0173` | `0.033` | `0.033` | `uniform20=29, uniform_jitter20=1` | `+0.2135` |
+
+解读：
+
+- `rank_weight=0.2` 没有稳定改善 val-selected test，seed `20260609` 被 val 选到过激规则，test 明显变差。
+- 但 seed `20260610` 的 test-oracle 达到 `+0.2135`，说明 rank loss 可能增强了部分排序信号，只是校准更不稳。
+
+## Conservative validation selection diagnostic
+
+不重训，直接在已有 `gate_scan.json` 上试更保守的 validation 选择规则：
+
+```text
+score = val_uniform_minus_learned_error - lambda * val_deviation_rate
+```
+
+诊断结果：
+
+| Run family | 规则 | Test Δ mean | 正 seed 数 | 备注 |
+|---|---|---:|---:|---|
+| global DINO gate-head | 原始 val max | `-0.0687` | `2 / 5` | 易选过激规则 |
+| global DINO gate-head | `lambda=0.10` | `-0.0073` | `4 / 5` | 接近零，但均值仍负 |
+| patch temporal gate-head | `lambda=0.10` | `-0.0251` | `1 / 2` | 无改善 |
+| patch temporal + rank02 | `lambda=0.10` | `+0.0087` | `1 / 2` | 主要靠回到 uniform，提升太弱 |
+
+结论：
+
+- 问题确实很大一部分是 validation rule 过激；对 global DINO，加入 deviation penalty 能明显改善正 seed 数。
+- 但保守选择规则目前只能把结果拉到接近零，不能算达成稳定 selector。
+- 下一步优先在 global DINO gate-head 上加入 rank loss，因为 global DINO 的 test-oracle signal 最强；如果仍不稳，再考虑把 conservative selection rule 写入训练脚本作为正式策略。

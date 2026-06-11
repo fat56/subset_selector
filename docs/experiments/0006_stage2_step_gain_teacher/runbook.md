@@ -188,3 +188,61 @@ PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/r
 | `20260610` | `+0.0462` | `+0.0420` | `+0.1294` | 小正 |
 
 结论：patch-summary temporal feature 有一点正信号，但 `1/2` seed 为正，不足以作为结果。下一步使用同一输入尝试 `rank_weight > 0`。
+
+## Patch-summary temporal + rank loss
+
+在 patch-summary temporal gate-head 上加入 pairwise ranking loss，先使用 `rank_weight=0.2`：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_patch_summary_temporal \
+  --run-dir runs/0006_stage2_step_gain_teacher/gate_head_single8_patch_temporal_aw1_gw05_rw02_seed20260609 \
+  --train-devices cuda:0 \
+  --candidate-tag 20 \
+  --seed 20260609 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --dropout 0.1 \
+  --advantage-weight 1.0 \
+  --gate-weight 0.5 \
+  --rank-weight 0.2 \
+  --positive-margin 0.2 \
+  --log-every-steps 20
+```
+
+`seed=20260610` 的对照只改 `--run-dir`、`--seed` 和 `--train-devices cuda:1`。
+
+结果：
+
+| Seed | Val Δ | Test Δ | Test-oracle Δ | 判断 |
+|---:|---:|---:|---:|---|
+| `20260609` | `+0.0571` | `-0.2408` | `0.0000` | validation 选到过激规则 |
+| `20260610` | `+0.0263` | `+0.0173` | `+0.2135` | test 小正，oracle 较高 |
+
+结论：`rank_weight=0.2` 可能增强隐藏排序信号，但校准更不稳，不能直接作为稳定 selector。
+
+## Conservative validation selection diagnostic
+
+不重训，直接扫描已有 `gate_scan.json`，把原来的 validation 最大提升规则改成带 deviation penalty 的保守选择：
+
+```text
+score = val_uniform_minus_learned_error - lambda * val_deviation_rate
+```
+
+诊断摘要：
+
+| Run family | 规则 | Test Δ mean | 正 seed 数 | 判断 |
+|---|---|---:|---:|---|
+| global DINO gate-head | 原始 val max | `-0.0687` | `2 / 5` | 过激 |
+| global DINO gate-head | `lambda=0.10` | `-0.0073` | `4 / 5` | 稳定性明显改善但均值仍负 |
+| patch temporal gate-head | `lambda=0.10` | `-0.0251` | `1 / 2` | 无明显改善 |
+| patch temporal + rank02 | `lambda=0.10` | `+0.0087` | `1 / 2` | 主要靠回退 uniform |
+
+结论：当前失败的核心不是 teacher 没有信号，而是 student 分数到固定推理规则的 calibration 不稳。下一步优先在 global DINO gate-head 上加 `rank_weight=0.2`，因为 global DINO 的 test-oracle threshold signal 在已有分支里最强。
