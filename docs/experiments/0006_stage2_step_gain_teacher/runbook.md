@@ -246,3 +246,97 @@ score = val_uniform_minus_learned_error - lambda * val_deviation_rate
 | patch temporal + rank02 | `lambda=0.10` | `+0.0087` | `1 / 2` | 主要靠回退 uniform |
 
 结论：当前失败的核心不是 teacher 没有信号，而是 student 分数到固定推理规则的 calibration 不稳。下一步优先在 global DINO gate-head 上加 `rank_weight=0.2`，因为 global DINO 的 test-oracle threshold signal 在已有分支里最强。
+
+## Global DINO gate-head + rank loss
+
+回到 global DINO gate-head，加入 `rank_weight=0.2`：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0006_stage2_step_gain_teacher/gate_head_single8_global_dino_aw1_gw05_rw02_seed20260609 \
+  --train-devices cuda:0 \
+  --candidate-tag 20 \
+  --seed 20260609 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --dropout 0.1 \
+  --advantage-weight 1.0 \
+  --gate-weight 0.5 \
+  --rank-weight 0.2 \
+  --positive-margin 0.2 \
+  --log-every-steps 20
+```
+
+结果：
+
+| Seed | Val Δ | Test Δ | Test-oracle Δ | 判断 |
+|---:|---:|---:|---:|---|
+| `20260609` | `+0.0641` | `-0.1311` | `+0.0306` | test 负 |
+| `20260610` | `+0.1026` | `-0.0183` | `+0.0514` | test 负 |
+
+结论：global DINO + rank02 没有改善稳定性，且 test-oracle signal 低于无 rank 的 global DINO gate-head。该分支停止。
+
+## Frame-score + swap-pair preference
+
+新增 `frame-target-mode swap_pair` 后，训练 `memory_frame_score`：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
+  --labels-csv runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0006_stage2_step_gain_teacher/frame_score_single8_swap_pair_w05_seed20260609 \
+  --model-kind memory_frame_score \
+  --candidate-tag 20 \
+  --seed 20260609 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --dropout 0.1 \
+  --rank-weight 1.0 \
+  --ce-weight 0.3 \
+  --coverage-weight 0.05 \
+  --uniform-gate-margin 0.2 \
+  --uniform-advantage-weight 0.5 \
+  --uniform-advantage-scale 1.0 \
+  --uniform-advantage-clip 4.0 \
+  --frame-target-mode swap_pair \
+  --frame-target-weight 0.5 \
+  --frame-pair-margin 0.0 \
+  --train-devices cuda:0 \
+  --log-every-steps 20
+```
+
+`seed=20260610` 的对照只改 `--run-dir`、`--seed` 和 `--train-devices cuda:1`。
+
+Uniform fallback margin scan：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/evaluate_stage2_image_only_selector_gate.py \
+  --run-dir runs/0006_stage2_step_gain_teacher/frame_score_single8_swap_pair_w05_seed20260609 \
+  --device cuda:0 \
+  --batch-size 32 \
+  --candidate-tag 20 \
+  --out runs/0006_stage2_step_gain_teacher/frame_score_single8_swap_pair_w05_seed20260609/uniform_gate_scan.json
+```
+
+结果：
+
+| Seed | Val Δ | Test Δ | Margin val-selected Test Δ | Test-oracle margin Δ | 判断 |
+|---:|---:|---:|---:|---:|---|
+| `20260609` | `+0.0431` | `-0.1346` | `-0.5690` | `+0.0259` | test 负 |
+| `20260610` | `+0.0286` | `+0.0388` | `+0.0388` | `+0.0502` | 小正 |
+
+结论：`swap_pair` 让 frame-score 更保守，但仍只有 `1/2` seed 为正。下一步用 `uniform20 + swapgain20` 的候选子集训练，减少 random/jitter/contiguous loss 对 single-swap preference 的干扰。

@@ -96,6 +96,7 @@ Oracle family：
 - Dense single-swap label 本身是有信号的，teacher 端比 `uniform20` 的可提升空间很明显。
 - 现有 gate-head 的 validation 分数全为正，但 val-selected rule 在 test 上只有 `2/5` 为正，说明主要问题是 calibration/threshold selection 和 split sensitivity。
 - Test-oracle threshold 在 `5/5` seeds 上为正，表示模型分数里确实有可用排序信号；只是当前候选级 gate 不能可靠地把这个信号转成固定的推理规则。
+
 ## Frame-score ridge-gain student
 
 第二轮改用 `memory_frame_score`：模型输出每帧 score，候选 subset 的 score 是 selected frames 平均值；同时用 `ridge_gain` 把 candidate-level utility 近似分摊到 frames。输入仍为 image-only global DINO feature。
@@ -169,4 +170,43 @@ score = val_uniform_minus_learned_error - lambda * val_deviation_rate
 
 - 问题确实很大一部分是 validation rule 过激；对 global DINO，加入 deviation penalty 能明显改善正 seed 数。
 - 但保守选择规则目前只能把结果拉到接近零，不能算达成稳定 selector。
-- 下一步优先在 global DINO gate-head 上加入 rank loss，因为 global DINO 的 test-oracle signal 最强；如果仍不稳，再考虑把 conservative selection rule 写入训练脚本作为正式策略。
+- 因此下一步验证 global DINO gate-head 加 `rank_weight=0.2`，再尝试更直接的 frame-level swap preference。
+
+## Gate-head student: global DINO + rank loss
+
+第五轮回到 test-oracle signal 最强的 global DINO gate-head，在 explicit gate-head 中加入 `rank_weight=0.2`。
+
+| Seed | Val 选择规则 | Val Δ | Test Δ | Test win | Test deviation | Test 选择分布 | Test-oracle Δ |
+|---:|---|---:|---:|---:|---:|---|---:|
+| `20260609` | `gate_logit@-0.5` | `+0.0641` | `-0.1311` | `0.333` | `0.600` | `uniform_jitter20=11, uniform20=12, swapgain20=6, motion_spread20=1` | `+0.0306` |
+| `20260610` | `advantage@0.0` | `+0.1026` | `-0.0183` | `0.267` | `0.700` | `uniform20=9, uniform_jitter20=7, swapgain20=14` | `+0.0514` |
+
+汇总：
+
+| 指标 | 数值 |
+|---|---:|
+| Val-selected test Δ mean | `-0.0747` |
+| Val-selected 正 seed 数 | `0 / 2` |
+| Test-oracle threshold Δ mean | `+0.0410` |
+
+解读：
+
+- global DINO 加 rank loss 没有继承原始 global DINO gate-head 的 test-oracle 强信号，val-selected 两个 seed 都为负。
+- rank loss 让 validation 选择更激进，test 端仍然容易选到 bad swap/jitter。
+- 该分支先停，不继续扩大 seed。
+
+## Frame-score student: swap-pair preference
+
+第六轮在 `memory_frame_score` 上新增 `swap_pair` frame preference：对每个 `swapgain20_dino1_rank*` single-swap，恢复 added frame 和 removed uniform frame；如果该 swap 相对 `uniform20` 改善 `target_error`，监督 `score(added) > score(removed)`，反之则监督相反方向。输入仍为 image-only global DINO feature。
+
+| Seed | Val Δ | Test Δ | Test win | Test 选择分布 | Uniform-margin val-selected Test Δ | Post-hoc margin Test-oracle Δ |
+|---:|---:|---:|---:|---|---:|---:|
+| `20260609` | `+0.0431` | `-0.1346` | `0.067` | `uniform20=21, swapgain20=9` | `-0.5690` | `+0.0259` |
+| `20260610` | `+0.0286` | `+0.0388` | `0.133` | `uniform20=20, swapgain20=10` | `+0.0388` | `+0.0502` |
+
+解读：
+
+- `swap_pair` 能把选择分布收敛到 `uniform20/swapgain20`，比 earlier frame-score 更贴近 single-swap teacher。
+- 但 test 仍是 `1/2` seed 为正，均值约 `-0.0479`，不能算稳定成果。
+- Uniform-margin scan 没有稳定救回坏 seed；说明问题不只是阈值，而是 bad swap 的排序本身还不稳。
+- 下一步应该把训练/eval 候选先收窄到 `uniform20 + swapgain20`，避免 random/jitter/contiguous 候选的 candidate-level loss 干扰 single-swap frame preference。
