@@ -78,6 +78,7 @@ class ImageOnlyTrainConfig:
     frame_target_weight: float = 0.0
     frame_target_ridge: float = 1e-2
     frame_target_clip: float = 5.0
+    frame_pair_margin: float = 0.0
     num_workers: int = 0
     eval_every_epochs: int = 1
     log_every_steps: int = 20
@@ -337,10 +338,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--uniform-advantage-scale", type=float, default=1.0)
     parser.add_argument("--uniform-advantage-clip", type=float, default=4.0)
-    parser.add_argument("--frame-target-mode", choices=["none", "ridge_gain"], default="none")
+    parser.add_argument("--frame-target-mode", choices=["none", "ridge_gain", "swap_pair"], default="none")
     parser.add_argument("--frame-target-weight", type=float, default=0.0)
     parser.add_argument("--frame-target-ridge", type=float, default=1e-2)
     parser.add_argument("--frame-target-clip", type=float, default=5.0)
+    parser.add_argument(
+        "--frame-pair-margin",
+        type=float,
+        default=0.0,
+        help="Margin for swap_pair frame preference loss.",
+    )
     parser.add_argument("--train-devices", default="cuda:0,cuda:1")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--eval-every-epochs", type=int, default=1)
@@ -383,6 +390,7 @@ def main(argv: list[str] | None = None) -> int:
         frame_target_weight=args.frame_target_weight,
         frame_target_ridge=args.frame_target_ridge,
         frame_target_clip=args.frame_target_clip,
+        frame_pair_margin=args.frame_pair_margin,
         num_workers=args.num_workers,
         eval_every_epochs=args.eval_every_epochs,
         log_every_steps=args.log_every_steps,
@@ -682,6 +690,8 @@ def compute_frame_targets(
     clip: float,
 ) -> torch.Tensor:
     if mode == "none":
+        return torch.zeros(candidate_masks.shape[1], dtype=torch.float32)
+    if mode == "swap_pair":
         return torch.zeros(candidate_masks.shape[1], dtype=torch.float32)
     if mode != "ridge_gain":
         raise ValueError(f"Unsupported frame_target_mode={mode}")
@@ -989,9 +999,50 @@ def compute_frame_target_loss(
     if not isinstance(raw_model, MemoryFrameScorer):
         raise ValueError("frame_target_loss requires MemoryFrameScorer")
     frame_scores = raw_model(batch["features"].to(device, non_blocking=True), frame_mask)
+    if config.frame_target_mode == "swap_pair":
+        return compute_swap_pair_frame_loss(frame_scores, batch, device, config)
     valid = frame_mask.to(device=frame_scores.device, dtype=torch.bool)
     targets = frame_targets.to(device=frame_scores.device, dtype=frame_scores.dtype)
     return F.smooth_l1_loss(frame_scores[valid], targets[valid])
+
+
+def compute_swap_pair_frame_loss(
+    frame_scores: torch.Tensor,
+    batch: dict[str, Any],
+    device: torch.device,
+    config: ImageOnlyTrainConfig,
+) -> torch.Tensor:
+    candidate_masks = batch["candidate_masks"].to(device=device, dtype=torch.bool)
+    candidate_valid = batch["candidate_valid"].to(device=device, dtype=torch.bool)
+    target_errors = batch["target_errors"].to(device=device, dtype=frame_scores.dtype)
+    uniform_indices = batch["uniform_indices"].to(device=device, dtype=torch.long)
+    losses = []
+    for row, methods in enumerate(batch["methods"]):
+        uniform_idx = int(uniform_indices[row].item())
+        uniform_mask = candidate_masks[row, uniform_idx]
+        uniform_error = target_errors[row, uniform_idx]
+        for candidate_idx, method in enumerate(methods):
+            if not candidate_valid[row, candidate_idx]:
+                continue
+            if not method.startswith(f"swapgain{config.candidate_tag}_"):
+                continue
+            candidate_mask = candidate_masks[row, candidate_idx]
+            added = candidate_mask & ~uniform_mask
+            removed = uniform_mask & ~candidate_mask
+            if int(added.sum().item()) != 1 or int(removed.sum().item()) != 1:
+                continue
+            gain = uniform_error - target_errors[row, candidate_idx]
+            abs_gain = gain.abs()
+            if float(abs_gain.item()) < config.min_target_gap:
+                continue
+            add_idx = int(torch.nonzero(added, as_tuple=False).flatten()[0].item())
+            remove_idx = int(torch.nonzero(removed, as_tuple=False).flatten()[0].item())
+            signed_delta = torch.sign(gain) * (frame_scores[row, add_idx] - frame_scores[row, remove_idx])
+            weight = (abs_gain / max(config.target_gap_scale, 1e-6)).clamp(0.25, 4.0)
+            losses.append(F.softplus(config.frame_pair_margin - signed_delta) * weight)
+    if not losses:
+        return frame_scores.new_zeros(())
+    return torch.stack(losses).mean()
 
 
 def coverage_regularizer(
