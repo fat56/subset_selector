@@ -340,3 +340,100 @@ PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/e
 | `20260610` | `+0.0286` | `+0.0388` | `+0.0388` | `+0.0502` | 小正 |
 
 结论：`swap_pair` 让 frame-score 更保守，但仍只有 `1/2` seed 为正。下一步用 `uniform20 + swapgain20` 的候选子集训练，减少 random/jitter/contiguous loss 对 single-swap preference 的干扰。
+
+## Frame-score + swap-pair only
+
+为了减少 candidate-level loss 干扰，把 `rank_weight/ce_weight/coverage_weight/uniform_advantage_weight` 全部设为 `0`，只保留 `frame-target-mode swap_pair`：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
+  --labels-csv runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0006_stage2_step_gain_teacher/frame_score_single8_swap_pair_only_w1_seed20260609 \
+  --model-kind memory_frame_score \
+  --candidate-tag 20 \
+  --seed 20260609 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --dropout 0.1 \
+  --rank-weight 0.0 \
+  --ce-weight 0.0 \
+  --coverage-weight 0.0 \
+  --uniform-gate-margin 0.2 \
+  --uniform-advantage-weight 0.0 \
+  --frame-target-mode swap_pair \
+  --frame-target-weight 1.0 \
+  --frame-pair-margin 0.0 \
+  --train-devices cuda:0 \
+  --log-every-steps 20
+```
+
+结果：
+
+| Seed | Val Δ | Test Δ | 判断 |
+|---:|---:|---:|---|
+| `20260609` | `-0.0270` | `-0.3335` | 明显变差 |
+| `20260610` | `+0.0214` | `+0.2122` | 明显变好 |
+
+结论：只保留 frame-pair preference 会放大 seed sensitivity，不继续。
+
+## Direct swap-gain regressor
+
+新增脚本 `scripts/run_stage2_image_only_swap_gain_regressor.py`，直接预测每个 single-swap 的 scalar gain：
+
+```text
+gain = target_error(uniform20) - target_error(swapgain20_dino1_rank*)
+```
+
+训练命令：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_swap_gain_regressor.py \
+  --labels-csv runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0006_stage2_step_gain_teacher/swap_gain_regressor_global_dino_seed20260609 \
+  --candidate-tag 20 \
+  --seed 20260609 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --dropout 0.1 \
+  --regression-weight 1.0 \
+  --sign-weight 0.3 \
+  --rank-weight 0.3 \
+  --gain-clip 4.0 \
+  --train-devices cuda:0 \
+  --log-every-steps 20
+```
+
+已完成 seeds：`20260609` 到 `20260613`。
+
+结果：
+
+| Seed | Val threshold | Val Δ | Test Δ | Test-oracle Δ | 判断 |
+|---:|---:|---:|---:|---:|---|
+| `20260609` | `0.05` | `+0.0539` | `+0.0989` | `+0.1249` | 正 |
+| `20260610` | `0.10` | `+0.0406` | `+0.0082` | `+0.1730` | 小正 |
+| `20260611` | `0.20` | `+0.0670` | `+0.1699` | `+0.1699` | 正 |
+| `20260612` | `0.05` | `+0.1199` | `+0.0002` | `+0.0472` | 持平小正 |
+| `20260613` | `0.50` | `+0.1204` | `-0.0099` | `0.0000` | 近似持平 |
+
+汇总：
+
+- Val-selected test Δ mean: `+0.0535`
+- Val-selected test Δ median: `+0.0082`
+- Val-selected 正 seed 数: `4 / 5`
+- Test-oracle threshold Δ mean: `+0.1030`
+
+结论：这是 0006 第一条具备弱稳定正提升的 image-only student 路线。下一步应沿 direct gain route 放大，而不是继续调 gate-head。

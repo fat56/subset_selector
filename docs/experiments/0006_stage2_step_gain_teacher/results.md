@@ -210,3 +210,62 @@ score = val_uniform_minus_learned_error - lambda * val_deviation_rate
 - 但 test 仍是 `1/2` seed 为正，均值约 `-0.0479`，不能算稳定成果。
 - Uniform-margin scan 没有稳定救回坏 seed；说明问题不只是阈值，而是 bad swap 的排序本身还不稳。
 - 下一步应该把训练/eval 候选先收窄到 `uniform20 + swapgain20`，避免 random/jitter/contiguous 候选的 candidate-level loss 干扰 single-swap frame preference。
+
+## Frame-score student: swap-pair only loss
+
+第七轮把 `memory_frame_score` 的 candidate ranking / CE / coverage loss 全部关掉，只保留 `swap_pair` frame preference loss，避免 random/jitter/contiguous candidate-level loss 干扰 single-swap preference。评估仍沿用已有 candidate set。
+
+| Seed | Val Δ | Test Δ | Test 选择分布 |
+|---:|---:|---:|---|
+| `20260609` | `-0.0270` | `-0.3335` | `contiguous20=1, convnext_kcenter20=1, swapgain20=24, uniform20=4` |
+| `20260610` | `+0.0214` | `+0.2122` | `swapgain20=19, uniform20=11` |
+
+解读：
+
+- 纯 frame-pair preference 会更激进地选择 `swapgain20`，但 seed sensitivity 反而更大。
+- `20260610` 给出较大正提升，`20260609` 明显变差，说明“只做 added > removed”不足以判断某个替换是否真的安全。
+- 该分支不继续扩大，改为直接预测每个 single-swap 的 scalar gain。
+
+## Swap-gain regressor: direct single-swap gain
+
+第八轮新增 `scripts/run_stage2_image_only_swap_gain_regressor.py`。模型输入仍是 full scene 的 image-only global DINO feature；对每个 `swapgain20_dino1_rank*`，恢复 `(added frame, removed uniform frame)`，直接回归：
+
+```text
+gain = target_error(uniform20) - target_error(swapgain20_dino1_rank*)
+```
+
+评估时先选 predicted gain 最高的 single-swap，再用 validation 选择 threshold 决定是否 fallback 到 `uniform20`。这一步是目前最接近“持续打分/边际收益”的版本。
+
+| Seed | Val threshold | Val Δ | Test Δ | Test win | Test deviation | Oracle top1 | Gain MAE | Sign acc | Pair acc | Test 选择分布 | Test-oracle Δ |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|
+| `20260609` | `0.05` | `+0.0539` | `+0.0989` | `0.333` | `0.700` | `0.100` | `0.581` | `0.506` | `0.533` | `swapgain20=21, uniform20=9` | `+0.1249` |
+| `20260610` | `0.10` | `+0.0406` | `+0.0082` | `0.033` | `0.100` | `0.067` | `0.561` | `0.560` | `0.493` | `swapgain20=3, uniform20=27` | `+0.1730` |
+| `20260611` | `0.20` | `+0.0670` | `+0.1699` | `0.333` | `0.500` | `0.233` | `0.542` | `0.537` | `0.527` | `swapgain20=15, uniform20=15` | `+0.1699` |
+| `20260612` | `0.05` | `+0.1199` | `+0.0002` | `0.167` | `0.367` | `0.100` | `0.598` | `0.546` | `0.480` | `swapgain20=11, uniform20=19` | `+0.0472` |
+| `20260613` | `0.50` | `+0.1204` | `-0.0099` | `0.100` | `0.267` | `0.100` | `0.630` | `0.513` | `0.518` | `swapgain20=8, uniform20=22` | `0.0000` |
+
+汇总：
+
+| 指标 | 数值 |
+|---|---:|
+| Val-selected test Δ mean | `+0.0535` |
+| Val-selected test Δ median | `+0.0082` |
+| Val-selected 正 seed 数 | `4 / 5` |
+| Val-selected test Δ min/max | `-0.0099 / +0.1699` |
+| Test-oracle threshold Δ mean | `+0.1030` |
+| Test-oracle threshold 正 seed 数 | `4 / 5` |
+
+保守 validation 诊断：
+
+| 规则 | Test Δ mean | 正 seed 数 | 备注 |
+|---|---:|---:|---|
+| 原始 val max | `+0.0535` | `4 / 5` | 当前主结果 |
+| `val_delta - 0.10 * val_deviation` | `+0.0587` | `4 / 5` | 均值略升，未救回 seed13 |
+| `val_delta - 0.50 * val_deviation` | `0.0000` | `0 / 5` | 全部回到 uniform |
+
+解读：
+
+- 这是 0006 中第一个 val-selected test 均值明确为正、且 `4/5` seeds 为正的 image-only student。
+- 提升仍然偏弱：median 只有 `+0.0082`，最差 seed `-0.0099` 接近持平；不能说已经解决 selector，但已经比 gate-head / frame-score 分支更稳。
+- 训练集内部的 pairwise accuracy 可以很高，但 held-out pairwise accuracy 只有约 `0.48-0.53`，说明 image-only DINO feature 对 VGGT-native gain 的泛化仍有限。
+- 下一步优先沿这条 direct gain route 放大：更多 scenes、更强 image-only feature（patch-summary temporal 或轻量时序 encoder）、并把 8 个 single-swaps 扩到更密的候选集合。
