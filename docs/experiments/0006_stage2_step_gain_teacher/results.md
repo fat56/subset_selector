@@ -96,4 +96,40 @@ Oracle family：
 - Dense single-swap label 本身是有信号的，teacher 端比 `uniform20` 的可提升空间很明显。
 - 现有 gate-head 的 validation 分数全为正，但 val-selected rule 在 test 上只有 `2/5` 为正，说明主要问题是 calibration/threshold selection 和 split sensitivity。
 - Test-oracle threshold 在 `5/5` seeds 上为正，表示模型分数里确实有可用排序信号；只是当前候选级 gate 不能可靠地把这个信号转成固定的推理规则。
-- 下一步不再继续加 seed 堆 gate-head，而是训练真正的 frame-level marginal gain student：输入每帧 image-only feature，直接回归该帧进入 `uniform20` base subset 的单步收益，并用 predicted gain 形成 replacement/topK。
+## Frame-score ridge-gain student
+
+第二轮改用 `memory_frame_score`：模型输出每帧 score，候选 subset 的 score 是 selected frames 平均值；同时用 `ridge_gain` 把 candidate-level utility 近似分摊到 frames。输入仍为 image-only global DINO feature。
+
+| Run | Frame target weight | Val Δ | Test Δ | Post-hoc test-oracle Δ | Test 选择分布 |
+|---|---:|---:|---:|---:|---|
+| `frame_score_single8_ridge_w02_seed20260609` | `0.20` | `+0.0367` | `-0.0420` | `+0.0815` | `uniform20=23, swapgain20=7` |
+| `frame_score_single8_ridge_w05_seed20260609` | `0.50` | `+0.0610` | `-0.0793` | `+0.0239` | `uniform20=23, swapgain20=7` |
+
+解读：
+
+- Dense single-swap labels 确实让 frame-score 在 validation 上出现小正信号。
+- 但 val-selected checkpoint/rule 在 test 上仍为负，post-hoc scan 只有 test-oracle 能扫出小正。
+- 这说明 `ridge_gain` 这种把 subset utility 线性分摊到 frames 的近似仍然不足；它能学到一点排序，但不能形成稳定 selector。
+
+## Gate-head student: patch-summary temporal DINO
+
+第三轮把输入从 global DINO feature 换成 0005 Main V6 的 patch-summary temporal feature：`frame_features=2304`，`image_stats=16`。模型仍是 explicit gate-head，标签使用 0006 dense single-swap labels。
+
+| Seed | Val 选择规则 | Val Δ | Test Δ | Test win | Test deviation | Test 选择分布 | Test-oracle Δ |
+|---:|---|---:|---:|---:|---:|---|---:|
+| `20260609` | `gate_logit@-0.5` | `+0.0496` | `-0.0923` | `0.033` | `0.167` | `uniform20=25, swapgain20=5` | `0.0000` |
+| `20260610` | `gate_logit@-0.5` | `+0.0462` | `+0.0420` | `0.100` | `0.233` | `uniform20=23, swapgain20=7` | `+0.1294` |
+
+汇总：
+
+| 指标 | 数值 |
+|---|---:|
+| Val-selected test Δ mean | `-0.0251` |
+| Val-selected 正 seed 数 | `1 / 2` |
+| Test-oracle threshold Δ mean | `+0.0647` |
+
+解读：
+
+- Patch-summary temporal feature 比 frame-score ridge-gain 略有希望，至少 seed `20260610` 在 val-selected test 上为正。
+- 但 seed `20260609` 仍为负，且 test-oracle 均值低于 global DINO gate-head 的 `+0.1221`。
+- 目前不能把 patch-temporal gate 视为稳定成果。下一步改为在 gate-head 中加入 pairwise ranking loss，强制模型保留 dense candidates 间的顺序信息，而不是只做 advantage/gate 回归。

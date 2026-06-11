@@ -104,3 +104,87 @@ PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/r
 - Test-oracle threshold 正 seed 数: `5 / 5`
 
 因此 dense single-swap teacher 是强的，但 candidate-level gate-head 仍不稳。下一步改为 frame-level marginal gain regressor。
+
+## Frame-score ridge-gain student
+
+用 dense single-swap labels 复跑 `memory_frame_score + ridge_gain`。这一版仍只使用 global DINO image-only feature：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_selector_training.py \
+  --labels-csv runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_vits14 \
+  --run-dir runs/0006_stage2_step_gain_teacher/frame_score_single8_ridge_w02_seed20260609 \
+  --model-kind memory_frame_score \
+  --candidate-tag 20 \
+  --seed 20260609 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --dropout 0.1 \
+  --rank-weight 1.0 \
+  --ce-weight 0.3 \
+  --coverage-weight 0.05 \
+  --uniform-gate-margin 0.2 \
+  --uniform-advantage-weight 0.5 \
+  --uniform-advantage-scale 1.0 \
+  --uniform-advantage-clip 4.0 \
+  --frame-target-mode ridge_gain \
+  --frame-target-weight 0.2 \
+  --frame-target-ridge 0.01 \
+  --frame-target-clip 5.0 \
+  --train-devices cuda:0 \
+  --log-every-steps 20
+```
+
+`frame-target-weight=0.5` 的对照只改 `--run-dir`、`--frame-target-weight 0.5` 和 `--train-devices cuda:1`。
+
+结果：
+
+| Run | Val Δ | Test Δ | Post-hoc test-oracle Δ | 判断 |
+|---|---:|---:|---:|---|
+| `frame_score_single8_ridge_w02_seed20260609` | `+0.0367` | `-0.0420` | `+0.0815` | val 小正，test 负 |
+| `frame_score_single8_ridge_w05_seed20260609` | `+0.0610` | `-0.0793` | `+0.0239` | val 小正，test 负 |
+
+结论：dense labels 没有让 ridge-gain frame-score 变成稳定 selector。该分支先停。
+
+## Patch-summary temporal gate-head
+
+把输入换成 0005 Main V6 的 patch-summary temporal DINO feature：
+
+```bash
+PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_gate_head_training.py \
+  --labels-csv runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_hardlabel_train_labels.csv \
+  --cache-jobs-json runs/0006_stage2_step_gain_teacher/stepgain_uniform20_dinov2_single8_300/augmented_cache_jobs.json \
+  --feature-cache caches/image_features/0005/hardlabel300_dinov2_patch_summary_temporal \
+  --run-dir runs/0006_stage2_step_gain_teacher/gate_head_single8_patch_temporal_aw1_gw05_seed20260609 \
+  --train-devices cuda:0 \
+  --candidate-tag 20 \
+  --seed 20260609 \
+  --epochs 120 \
+  --batch-size 32 \
+  --lr 2e-4 \
+  --hidden-dim 256 \
+  --num-layers 2 \
+  --num-heads 8 \
+  --memory-slots 8 \
+  --dropout 0.1 \
+  --advantage-weight 1.0 \
+  --gate-weight 0.5 \
+  --rank-weight 0.0 \
+  --positive-margin 0.2 \
+  --log-every-steps 20
+```
+
+已完成 seeds：
+
+| Seed | Val Δ | Test Δ | Test-oracle Δ | 判断 |
+|---:|---:|---:|---:|---|
+| `20260609` | `+0.0496` | `-0.0923` | `0.0000` | test 负 |
+| `20260610` | `+0.0462` | `+0.0420` | `+0.1294` | 小正 |
+
+结论：patch-summary temporal feature 有一点正信号，但 `1/2` seed 为正，不足以作为结果。下一步使用同一输入尝试 `rank_weight > 0`。
