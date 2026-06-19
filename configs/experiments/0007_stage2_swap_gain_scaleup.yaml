@@ -1,0 +1,109 @@
+experiment:
+  id: 0007_stage2_swap_gain_scaleup
+  title: Stage 2 swap-gain scale-up
+  stage: stage2
+  status: planned
+  created: 2026-06-19
+
+question: Does scaling direct swap-gain labels to about 1000 scenes make the image-only student reliably beat uniform20?
+
+dependencies:
+  - docs/experiments/0005_image_only_teacher_student_selector
+  - docs/experiments/0006_stage2_step_gain_teacher
+
+dataset:
+  target_scene_count: 1000
+  split_policy: scene_level_stratified_by_dataset_80_10_10
+  sources:
+    wildrgbd_harrison:
+      target_scenes: 500
+      full_frames: 100
+    dl3dv:
+      target_scenes: 500
+      full_frames: 80
+  exclude:
+    - docs/experiments/0002_ltm30_pose_depth_validation/manifest.json
+
+teacher:
+  integration: configs/integrations/vggt_omega.yaml
+  checkpoint: 512
+  image_resolution: 512
+  mode: balanced
+  cache_devices: [cuda:0, cuda:1]
+  candidate_tag: "20"
+  single_swaps_per_scene: 8
+  multi_swaps: []
+  max_pixels_per_image: 1024
+  max_pointmap_points: 60000
+  cache_root: caches/vggt_omega/0007_stage2_swap_gain_scaleup/swapgain1000_single8_images512
+  run_dir: runs/0007_stage2_swap_gain_scaleup/swapgain1000_single8
+  metrics:
+    - pose_rotation_mean_deg
+    - pointmap_rmse_norm
+    - depth_log_rmse
+  target_error: z_scored_average_of_primary_native_errors
+
+features:
+  primary:
+    kind: dinov2_vits14_global
+    cache_root: caches/image_features/0007/swapgain1000_dinov2_vits14
+    boundary: image_only_no_vggt_tokens
+  secondary:
+    kind: dinov2_vits14_patch_summary_temporal
+    cache_root: caches/image_features/0007/swapgain1000_dinov2_patch_summary_temporal
+    boundary: image_only_no_vggt_tokens
+    run_only_if_primary_close_or_passes: true
+
+student:
+  script: scripts/run_stage2_image_only_swap_gain_regressor.py
+  model: direct_single_swap_gain_regressor
+  candidate_tag: "20"
+  seeds: [20260619, 20260620, 20260621, 20260622, 20260623]
+  epochs: 120
+  batch_size: 32
+  lr: 0.0002
+  weight_decay: 0.0001
+  hidden_dim: 256
+  num_layers: 2
+  num_heads: 8
+  memory_slots: 8
+  dropout: 0.1
+  losses:
+    regression_weight: 1.0
+    sign_weight: 0.3
+    rank_weight: 0.3
+    gain_clip: 4.0
+
+evaluation:
+  baseline: uniform20
+  primary_metric: test_uniform_minus_learned_error_mean
+  threshold_policy: validation_selected_only
+  diagnostics:
+    - test_oracle_threshold_delta
+    - gain_mae
+    - gain_sign_accuracy
+    - gain_pair_accuracy
+    - dataset_wise_delta
+  promotion_rule:
+    mean_test_delta_min: 0.05
+    median_test_delta_positive: true
+    positive_seed_count_min: 4
+    worst_seed_delta_min: -0.02
+
+resources:
+  current_free_disk_gb: 814
+  observed_0006_swap_cache_gb:
+    scenes: 300
+    swaps_per_scene: 8
+    size_gb: 103
+  estimated_0007_swap_cache_gb: 343
+  minimum_free_disk_before_start_gb: 650
+  stop_if_free_disk_below_gb: 250
+  cleanup_after_labels:
+    keep:
+      - runs/0007_stage2_swap_gain_scaleup/**/augmented_hardlabel_train_labels.csv
+      - runs/0007_stage2_swap_gain_scaleup/**/augmented_cache_jobs.json
+      - runs/0007_stage2_swap_gain_scaleup/**/summary.json
+      - caches/image_features/0007
+    optional_delete:
+      - caches/vggt_omega/0007_stage2_swap_gain_scaleup/swapgain1000_single8_images512
