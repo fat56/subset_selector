@@ -1,0 +1,113 @@
+experiment:
+  id: 0008_stage2_pose_angle_keyframing
+  title: Stage 2 pose-angle keyframing baseline
+  stage: stage2
+  status: planned
+  created: 2026-06-20
+
+question: Can pose-angle threshold keyframing provide a stable non-learned fixed-K baseline that beats uniform20?
+
+references:
+  - name: KV-Tracker
+    url: https://github.com/Marwan99/kv_tracker
+  - name: KV-Tracker arXiv
+    url: https://arxiv.org/abs/2512.22581
+
+dependencies:
+  - docs/experiments/0007_stage2_swap_gain_scaleup
+
+dataset:
+  manifest: docs/experiments/0007_stage2_swap_gain_scaleup/swapgain1000_manifest.json
+  scene_count: 1000
+  fixed_k: 20
+  sources:
+    wildrgbd_harrison: 500
+    dl3dv: 500
+
+pose_keyframing:
+  pose_source_priority:
+    - transform_matrix
+    - pose_path
+  scene_center: robust_camera_center_mean
+  angle_units: degrees
+  azimuth_distance: circular
+  methods:
+    - name: uniform20
+      kind: existing_manifest_split
+    - name: pose_angle10_keyframe20
+      kind: threshold_keyframe
+      tau_azimuth_deg: 10
+      tau_elevation_deg: 10
+    - name: pose_angle15_keyframe20
+      kind: threshold_keyframe
+      tau_azimuth_deg: 15
+      tau_elevation_deg: 15
+    - name: pose_angle20_keyframe20
+      kind: threshold_keyframe
+      tau_azimuth_deg: 20
+      tau_elevation_deg: 20
+    - name: pose_farthest_angle20
+      kind: farthest_spherical_angle
+    - name: pose_hybrid_uniform_angle20
+      kind: uniform_anchors_then_farthest_angle
+      uniform_anchor_count: 5
+
+offline_diagnostics:
+  run_dir: runs/0008_stage2_pose_angle_keyframing
+  subsets_json: runs/0008_stage2_pose_angle_keyframing/pose_angle_subsets.json
+  summary_md: docs/experiments/0008_stage2_pose_angle_keyframing/keyframe_policy_summary.md
+  metrics:
+    - azimuth_coverage_deg
+    - elevation_coverage_deg
+    - mean_pairwise_spherical_angle_deg
+    - min_pairwise_spherical_angle_deg
+    - overlap_with_uniform20
+    - selected_count_anomalies
+
+proxy_evaluation:
+  enabled_before_vggt: true
+  labels_csv: runs/0007_stage2_swap_gain_scaleup/swapgain1000_single8/augmented_hardlabel_train_labels.csv
+  cache_jobs_json: runs/0007_stage2_swap_gain_scaleup/swapgain1000_single8/augmented_cache_jobs.json
+  output_md: docs/experiments/0008_stage2_pose_angle_keyframing/proxy_against_0007_swap_labels.md
+
+vggt_smoke:
+  run_only_after_offline_signal: true
+  scene_count: 50
+  per_dataset:
+    wildrgbd_harrison: 25
+    dl3dv: 25
+  methods:
+    - uniform20
+    - pose_angle10_keyframe20
+    - pose_farthest_angle20
+    - pose_hybrid_uniform_angle20
+  run_dir: runs/0008_stage2_pose_angle_keyframing/pose_angle_smoke50
+  cache_root: caches/vggt_omega/0008_stage2_pose_angle_keyframing/pose_angle_smoke50_images512
+  cache_devices: [cuda:0, cuda:1]
+  image_resolution: 512
+  metrics:
+    - pose_rotation_mean_deg
+    - pointmap_rmse_norm
+    - depth_log_rmse
+
+evaluation:
+  baseline: uniform20
+  primary_metric: uniform_minus_pose_keyframe_error
+  smoke_promotion_rule:
+    mean_delta_min: 0.05
+    win_rate_min: 0.55
+    worst_dataset_delta_min: -0.02
+  full_promotion_rule:
+    mean_delta_min: 0.05
+    median_delta_positive: true
+    worst_dataset_delta_min: -0.02
+
+resources:
+  current_free_disk_gb: 207
+  minimum_free_disk_for_vggt_smoke_gb: 300
+  preferred_free_disk_for_vggt_smoke_gb: 650
+  stop_if_free_disk_below_gb: 150
+  large_existing_cache:
+    path: caches/vggt_omega/0007_stage2_swap_gain_scaleup/swapgain1000_single8_images512
+    size_gb: 596
+    optional_delete_after_preserving_labels: true
