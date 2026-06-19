@@ -15,10 +15,12 @@ from typing import Any
 
 import torch
 from PIL import Image
+from PIL import ImageFile
 from torch import nn
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 @dataclass(frozen=True)
