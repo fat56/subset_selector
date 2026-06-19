@@ -1,26 +1,26 @@
-# Runbook
+# 运行手册
 
-## Preconditions
+## 前置条件
 
-- Free disk on `/` is at least `650G`; current check showed about `814G`.
-- `runs/0006_stage2_step_gain_teacher/...` labels are preserved for comparison.
-- `caches/image_features/` is preserved.
-- LTM30 validation scenes remain excluded from training scenes.
+- `/` 上至少有 `650G` 可用空间；当时检查约为 `814G`。
+- `runs/0006_stage2_step_gain_teacher/...` 标签保留，用于对比。
+- `caches/image_features/` 保留。
+- LTM30 validation scenes 继续从训练场景中排除。
 
-## Step 0: Space Check
+## 步骤 0: 空间检查
 
 ```bash
 df -h /home/m/project/ltm/selector /home/m
 du -sh caches runs caches/vggt_omega caches/image_features 2>/dev/null
 ```
 
-Stop before label generation if free space is below `650G`.
+如果 label generation 前可用空间低于 `650G`，停止启动。
 
-## Step 1: Build 1000-Scene Manifest
+## 步骤 1: 构建 1000 场景 Manifest
 
-The current `0006` label script is tied to hardlabel300/richer300 inputs. First create a manifest or label source that covers about 1000 scenes.
+当前 `0006` label script 绑定了 hardlabel300/richer300 输入。需要先创建覆盖约 1000 个场景的 manifest 或 label source。
 
-Target manifest:
+目标 manifest：
 
 ```text
 docs/experiments/0007_stage2_swap_gain_scaleup/swapgain1000_manifest.json
@@ -28,16 +28,16 @@ docs/experiments/0007_stage2_swap_gain_scaleup/swapgain1000_scenes.csv
 docs/experiments/0007_stage2_swap_gain_scaleup/swapgain1000_summary.md
 ```
 
-Preferred source mix:
+优先数据配比：
 
 ```text
 500 WildRGBD Harrison scenes
 500 DL3DV scenes
 ```
 
-If reusing the hard-label manifest builder, use a new stem and do not overwrite `0003` artifacts.
+如果复用 hard-label manifest builder，使用新的 stem，不要覆盖 `0003` 产物。
 
-Expected command shape:
+预期命令形态：
 
 ```bash
 PYTHONPATH=scripts:src python scripts/prepare_stage2_readout_hardlabel100.py \
@@ -51,94 +51,94 @@ PYTHONPATH=scripts:src python scripts/prepare_stage2_readout_hardlabel100.py \
   --random-seed 20260619
 ```
 
-Review the output before launching VGGT:
+启动 VGGT 前检查输出：
 
 ```bash
 sed -n '1,120p' docs/experiments/0007_stage2_swap_gain_scaleup/swapgain1000_summary.md
 ```
 
-## Step 2: Prepare Image-Only Features
+## 步骤 2: 准备 Image-Only Features
 
-The direct gain regressor needs one image-only feature file per scene. Use DINOv2-S/ViT-S first.
+Direct gain regressor 需要每个场景一个 image-only feature 文件。第一版使用 DINOv2-S/ViT-S。
 
-If `prepare_stage2_image_only_selector_features.py` still requires labels/jobs rather than a manifest, add a manifest-based mode before running the full cache. Do not generate VGGT labels just to create image-only features.
+如果 `prepare_stage2_image_only_selector_features.py` 仍要求 labels/jobs，而不是 manifest，则先添加 manifest-based mode，再运行 full feature cache。不要为了创建 image-only features 去生成 VGGT labels。
 
-Expected output:
+预期输出：
 
 ```text
 caches/image_features/0007/swapgain1000_dinov2_vits14/<scene_id>.pt
 ```
 
-Optional secondary feature cache:
+可选二级 feature cache：
 
 ```text
 caches/image_features/0007/swapgain1000_dinov2_patch_summary_temporal/<scene_id>.pt
 ```
 
-## Step 3: Smoke Label Generation
+## 步骤 3: Smoke 标签生成
 
-Run a small smoke before the 1000-scene cache.
+在 1000 场景 cache 前先跑小规模 smoke。
 
-Target:
+目标：
 
-- `20` scenes.
-- `8` single swaps.
-- Both datasets represented.
+- `20` 个场景。
+- `8` 个 single swaps。
+- 两个数据集都要覆盖。
 
-Expected output:
+预期输出：
 
 ```text
 runs/0007_stage2_swap_gain_scaleup/swapgain1000_single8_smoke20/
 caches/vggt_omega/0007_stage2_swap_gain_scaleup/swapgain1000_single8_smoke20_images512/
 ```
 
-Checks:
+检查项：
 
-- All VGGT jobs complete.
-- `augmented_hardlabel_train_labels.csv` exists.
-- Teacher best swap beats `uniform20` on most smoke scenes.
-- Per-scene cache cost is close to the `0006` estimate.
+- 所有 VGGT jobs 完成。
+- `augmented_hardlabel_train_labels.csv` 存在。
+- Teacher best swap 在大多数 smoke scenes 上优于 `uniform20`。
+- 单场景 cache 成本接近 `0006` 估计。
 
-## Step 4: Full 1000 x 8 Label Generation
+## 步骤 4: Full 1000 x 8 标签生成
 
-Launch only after the smoke passes.
+仅在 smoke 通过后启动。
 
-Target paths:
+目标路径：
 
 ```text
 runs/0007_stage2_swap_gain_scaleup/swapgain1000_single8/
 caches/vggt_omega/0007_stage2_swap_gain_scaleup/swapgain1000_single8_images512/
 ```
 
-Expected scale:
+预期规模：
 
-- `1000 scenes`.
-- `8000` single-swap VGGT jobs.
-- About `340G` new swap cache, plus any full/uniform reference cache not reused.
+- `1000 scenes`。
+- `8000` 个 single-swap VGGT jobs。
+- 约 `340G` 新 swap cache，外加无法复用的 full/uniform reference cache。
 
-Actual scale:
+实际规模：
 
-- `1000` scenes.
-- `9000` label rows including `uniform20`.
-- `596G` full VGGT cache at `caches/vggt_omega/0007_stage2_swap_gain_scaleup/swapgain1000_single8_images512`.
-- Final free disk after labels and training: `208G`.
+- `1000` 个场景。
+- 包含 `uniform20` 在内，共 `9000` 行标签。
+- Full VGGT cache 实际为 `596G`，路径为 `caches/vggt_omega/0007_stage2_swap_gain_scaleup/swapgain1000_single8_images512`。
+- 标签和训练完成后剩余空间为 `208G`。
 
-Monitor:
+监控：
 
 ```bash
 df -h /home/m
 du -sh caches/vggt_omega/0007_stage2_swap_gain_scaleup/* 2>/dev/null
 ```
 
-Stop condition:
+停止条件：
 
-- Free disk below `250G`.
-- Repeated VGGT cache failures on the same device.
-- Per-scene cache cost exceeds the `0006` estimate by more than `30%`.
+- 可用空间低于 `250G`。
+- 同一设备上反复出现 VGGT cache failure。
+- 单场景 cache 成本超过 `0006` 估计 `30%` 以上。
 
-## Step 5: Direct Gain Regressor, Five Seeds
+## 步骤 5: Direct Gain Regressor，五个 Seed
 
-Primary training command shape:
+主训练命令形态：
 
 ```bash
 PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/run_stage2_image_only_swap_gain_regressor.py \
@@ -164,7 +164,7 @@ PYTHONPATH=scripts:src /home/m/project/ltm/vggt-omega/.venv/bin/python scripts/r
   --log-every-steps 20
 ```
 
-Repeat for seeds:
+重复以下 seeds：
 
 ```text
 20260619
@@ -174,21 +174,21 @@ Repeat for seeds:
 20260623
 ```
 
-Use one GPU per run if running seeds in parallel. Keep run directories separate.
+如果并行跑多个 seed，每个 run 使用一张 GPU。不同 seed 的 run directory 必须分开。
 
-## Step 6: Summarize
+## 步骤 6: 总结
 
-Update `results.md` with:
+更新 `results.md`，包含：
 
-- Teacher oracle diagnostics.
-- Per-seed val/test deltas.
-- Mean/median/worst test delta.
-- Positive seed count.
-- Dataset-wise WildRGBD vs DL3DV deltas.
-- Gain MAE/sign/pairwise accuracy.
-- Disk usage after label generation.
+- Teacher oracle diagnostics。
+- 每个 seed 的 val/test deltas。
+- Mean/median/worst test delta。
+- Positive seed count。
+- WildRGBD vs DL3DV 的 dataset-wise delta。
+- Gain MAE/sign/pairwise accuracy。
+- Label generation 后的磁盘使用情况。
 
-Promotion requires:
+晋级要求：
 
 ```text
 mean test delta >= +0.05
@@ -197,9 +197,9 @@ positive seeds >= 4/5
 worst seed >= -0.02
 ```
 
-## Cleanup Policy
+## 清理策略
 
-After labels and summaries are written, VGGT tensor cache may be deleted if disk pressure returns, but preserve:
+Labels 和 summaries 已写出后，如果磁盘压力回升，可以删除 VGGT tensor cache，但需要保留：
 
 ```text
 runs/0007_stage2_swap_gain_scaleup/**/augmented_hardlabel_train_labels.csv

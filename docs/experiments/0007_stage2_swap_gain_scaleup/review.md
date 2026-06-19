@@ -1,40 +1,40 @@
-# Review
+# 复盘
 
-## Decision
+## 决策
 
-Fail promotion. `0007` should be kept as a useful teacher-label asset, but the direct global-DINO swap-gain regressor should not be promoted as the next selector policy.
+不晋级。`0007` 应保留为有价值的 teacher-label 资产，但 direct global-DINO swap-gain regressor 不应作为下一版 selector policy 晋级。
 
-The scale-up answered the main question clearly: more scenes alone did not make the `0006` signal stable. The teacher still has strong oracle headroom, but the student cannot reliably choose when to swap on held-out scenes.
+这次扩规模清楚回答了核心问题：单纯增加场景数量，没有让 `0006` 的信号变稳定。Teacher 仍然有很强的 oracle headroom，但 student 不能可靠判断 held-out scenes 上什么时候应该 swap。
 
-## Answers
+## 问题回答
 
-| Question | Answer |
+| 问题 | 回答 |
 |---|---|
-| Did scaling from 300 to 1000 scenes improve validation-to-test calibration? | No. Validation-selected thresholds overfit in several seeds; mean test delta was `-0.1703`. |
-| Did direct gain regression remain the strongest student formulation? | It remains the best tested formulation so far, but this run shows it is not robust enough with only global DINO image features. |
-| Were gains balanced across WildRGBD and DL3DV? | No robust gain on either. DL3DV mean test delta was `-0.2014`; WildRGBD mean test delta was `-0.1391`. |
-| Was the teacher oracle still strong after scale-up? | Yes. The best swap beat `uniform20` in `91.2%` of scenes with mean improvement `+2.2821`. |
-| Did disk usage stay within the planned budget? | Training was fine, but VGGT cache usage exceeded the estimate: full cache `596G`, final free space `208G`. |
+| 从 300 扩到 1000 个场景后，validation-to-test calibration 是否变好？ | 没有。多个 seed 的 validation-selected threshold 发生过拟合；mean test delta 为 `-0.1703`。 |
+| Direct gain regression 是否仍是目前最强的 student 形式？ | 它仍是目前测过的最好路线，但这轮说明只用 global DINO image features 时还不够稳健。 |
+| WildRGBD 与 DL3DV 上收益是否均衡？ | 没有任何一边有稳定收益。DL3DV mean test delta 为 `-0.2014`；WildRGBD mean test delta 为 `-0.1391`。 |
+| 扩规模后 teacher oracle 是否仍然强？ | 是。Best swap 在 `91.2%` 的场景中优于 `uniform20`，平均提升 `+2.2821`。 |
+| 磁盘使用是否符合计划？ | 训练部分没问题，但 VGGT cache 超出估计：full cache `596G`，最终剩余空间 `208G`。 |
 
-## Evidence
+## 证据
 
-- Proposal: `docs/experiments/0007_stage2_swap_gain_scaleup/proposal.md`
-- Runbook: `docs/experiments/0007_stage2_swap_gain_scaleup/runbook.md`
-- Results: `docs/experiments/0007_stage2_swap_gain_scaleup/results.md`
-- Config: `configs/experiments/0007_stage2_swap_gain_scaleup.yaml`
-- Full labels: `runs/0007_stage2_swap_gain_scaleup/swapgain1000_single8/augmented_hardlabel_train_labels.csv`
-- Student summaries: `runs/0007_stage2_swap_gain_scaleup/swap_gain_regressor_global_dino_seed*/summary.json`
+- 实验方案: `docs/experiments/0007_stage2_swap_gain_scaleup/proposal.md`
+- 运行手册: `docs/experiments/0007_stage2_swap_gain_scaleup/runbook.md`
+- 实验结果: `docs/experiments/0007_stage2_swap_gain_scaleup/results.md`
+- 实验配置: `configs/experiments/0007_stage2_swap_gain_scaleup.yaml`
+- 完整标签: `runs/0007_stage2_swap_gain_scaleup/swapgain1000_single8/augmented_hardlabel_train_labels.csv`
+- Student 汇总: `runs/0007_stage2_swap_gain_scaleup/swap_gain_regressor_global_dino_seed*/summary.json`
 
-## Interpretation
+## 解读
 
-The teacher side is not the bottleneck. The 8 single-swap candidates are often meaningfully better than `uniform20`, but many individual swaps are harmful, and the global image-only student does not learn a reliable scene-level accept/reject rule. It can fit training rankings, yet held-out sign and pairwise accuracies stay close to chance.
+Teacher 侧不是瓶颈。8 个 single-swap candidate 经常显著优于 `uniform20`，但很多单个 swap 也是有害的，而 global image-only student 没有学到可靠的场景级 accept/reject 规则。它可以拟合 training ranking，但 held-out sign accuracy 和 pairwise accuracy 仍接近随机水平。
 
-The two worst seeds selected lower validation thresholds (`0.8` and `1.0`), increased test deviation to `0.58` and `0.37`, and lost heavily. More conservative thresholds avoided catastrophic losses but mostly fell back to `uniform20`, leaving little positive gain.
+两个最差 seed 选择了较低验证阈值（`0.8` 和 `1.0`），把 test deviation 提高到 `0.58` 和 `0.37`，导致严重损失。更保守的阈值避免了灾难性负收益，但多数情况下只是退回 `uniform20`，实际正收益很小。
 
-## Next Actions
+## 下一步
 
-- Do not launch another same-form 1000-scene global-DINO direct-gain run before changing the student signal.
-- Try richer image-only features next: patch-summary/temporal aggregation, adjacent-frame motion cues, or a small per-frame sequence model with explicit uniform-subset context.
-- Add a conservative calibration objective or threshold policy that penalizes false-positive swaps more strongly than missed swaps.
-- Reuse the `0007` labels for ablations; avoid regenerating VGGT labels unless a new candidate family is being tested.
-- If disk pressure returns, the `596G` full VGGT cache can be deleted after preserving labels, jobs, summaries, and DINO feature cache.
+- 在改变 student 信号之前，不再启动同形态的 1000 场景 global-DINO direct-gain run。
+- 下一步尝试更强的 image-only feature：patch-summary/temporal aggregation、相邻帧 motion cues，或带显式 uniform-subset context 的轻量 per-frame sequence model。
+- 增加保守 calibration objective 或 threshold policy，让 false-positive swap 的代价高于 missed swap。
+- 复用 `0007` 标签做 ablation；除非测试新的 candidate family，否则避免重新生成 VGGT 标签。
+- 如果磁盘压力再次出现，在保留 labels、jobs、summaries 与 DINO feature cache 后，可以删除 `596G` full VGGT cache。

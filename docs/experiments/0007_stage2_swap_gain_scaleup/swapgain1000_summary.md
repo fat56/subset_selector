@@ -1,4 +1,4 @@
-# Stage 2.0 Hard-Label Readout Manifest 摘要
+# Stage 2.0 硬标签 Readout Manifest 摘要
 
 - 创建日期: 2026-06-19
 - 数据根目录: `/home/m/dataset/ltm_datasets`
@@ -13,7 +13,7 @@
 
 ## 入选 Scene 统计
 
-| Dataset | 数量 |
+| 数据集 | 数量 |
 |---|---:|
 | DL3DV-ALL-480P | 500 |
 | wildrgbd_harrison | 500 |
@@ -27,5 +27,6 @@
 
 ## Label 目标
 
-Hard labels 由每个 subset 的 VGGT-native depth/pose/point-map 输出与 full-view VGGT cache 中同一批图像的输出对比得到。
+Hard labels 由每个 subset 的 VGGT-native depth/pose/point-map 输出，与 full-view VGGT cache 中同一批图像的输出对比得到。
+
 训练目标是按 scene 做 z-score 后的 `pose_rotation_mean_deg`、`pointmap_rmse_norm` 和 `depth_log_rmse` 求和。
