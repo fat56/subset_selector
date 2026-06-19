@@ -116,6 +116,13 @@ Expected scale:
 - `8000` single-swap VGGT jobs.
 - About `340G` new swap cache, plus any full/uniform reference cache not reused.
 
+Actual scale:
+
+- `1000` scenes.
+- `9000` label rows including `uniform20`.
+- `596G` full VGGT cache at `caches/vggt_omega/0007_stage2_swap_gain_scaleup/swapgain1000_single8_images512`.
+- Final free disk after labels and training: `208G`.
+
 Monitor:
 
 ```bash

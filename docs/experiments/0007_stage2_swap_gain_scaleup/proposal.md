@@ -4,7 +4,7 @@
 
 - Experiment ID: `0007_stage2_swap_gain_scaleup`
 - Stage: `stage2`
-- Status: planned
+- Status: complete, not promoted
 - Created: 2026-06-19
 - Config: `configs/experiments/0007_stage2_swap_gain_scaleup.yaml`
 
@@ -17,6 +17,8 @@ Does the weak but repeatable signal from `0006` direct swap-gain regression beco
 `0006` showed the first val-selected image-only student with positive held-out mean improvement over `uniform20`: test delta mean `+0.0535`, `4/5` seeds positive, but median only `+0.0082`. The likely bottleneck is not teacher headroom; dense single-swap labels beat `uniform20` in `90.7%` of scenes. The bottleneck is student generalization and threshold calibration from too few scenes.
 
 Scaling to about 1000 scenes should reduce split sensitivity and make the direct gain regressor's validation-selected threshold more reliable. If this is true, positive test delta should hold across seeds without relying on test-oracle threshold scans.
+
+Final result: this hypothesis was not supported. The teacher oracle remained strong, but validation-selected student thresholds produced mean test delta `-0.1703`, median `-0.0203`, and only `2/5` positive seeds.
 
 ## Method
 
