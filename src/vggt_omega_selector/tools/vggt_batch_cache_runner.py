@@ -34,8 +34,11 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(vggt_root))
 
     import torch
+    from PIL import ImageFile
     from vggt_omega.models import VGGTOmega
     from vggt_omega.utils.load_fn import load_and_preprocess_images
+
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
 
     jobs = json.loads(Path(args.jobs_json).read_text(encoding="utf-8"))
     if not isinstance(jobs, list) or not jobs:

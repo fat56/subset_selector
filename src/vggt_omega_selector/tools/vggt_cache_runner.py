@@ -34,8 +34,11 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(vggt_root))
 
     import torch
+    from PIL import ImageFile
     from vggt_omega.models import VGGTOmega
     from vggt_omega.utils.load_fn import load_and_preprocess_images
+
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
 
     image_paths = collect_image_paths(args.images, args.image_list)
     if not image_paths:
@@ -143,4 +146,3 @@ def save_tensor(torch_module: Any, output_dir: Path, outputs: dict[str, dict[str
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
