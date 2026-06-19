@@ -34,6 +34,11 @@ class FeatureScene:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Prepare 0005 image-only selector feature cache.")
     parser.add_argument(
+        "--manifest",
+        default=None,
+        help="Optional scene manifest with full frames. If provided, labels/cache-jobs inputs are not used.",
+    )
+    parser.add_argument(
         "--labels-csv",
         default="runs/0003_stage2_readout_calibration/hardlabel300_labels_full100_80/hardlabel_train_labels.csv",
     )
@@ -66,17 +71,26 @@ def main(argv: list[str] | None = None) -> int:
 
     out_dir = resolve(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    scenes = load_feature_scenes(
-        labels_csv=resolve(args.labels_csv),
-        cache_jobs_json=resolve(args.cache_jobs_json),
-        out_dir=out_dir,
-        candidate_tag=args.candidate_tag,
-        limit_scenes=args.limit_scenes,
-        seed=args.seed,
-    )
+    if args.manifest:
+        scenes = load_feature_scenes_from_manifest(
+            manifest_path=resolve(args.manifest),
+            out_dir=out_dir,
+            limit_scenes=args.limit_scenes,
+            seed=args.seed,
+        )
+    else:
+        scenes = load_feature_scenes(
+            labels_csv=resolve(args.labels_csv),
+            cache_jobs_json=resolve(args.cache_jobs_json),
+            out_dir=out_dir,
+            candidate_tag=args.candidate_tag,
+            limit_scenes=args.limit_scenes,
+            seed=args.seed,
+        )
     scenes = [scene for index, scene in enumerate(scenes) if index % args.shard_count == args.shard_index]
     metadata = {
         "backbone": args.backbone,
+        "manifest": str(resolve(args.manifest)) if args.manifest else None,
         "labels_csv": str(resolve(args.labels_csv)),
         "cache_jobs_json": str(resolve(args.cache_jobs_json)),
         "out_dir": str(out_dir),
@@ -152,6 +166,40 @@ def load_feature_scenes(
                 image_list=image_list,
                 output_path=out_dir / f"{scene_id}.pt",
                 image_count=image_count,
+            )
+        )
+
+    scenes = sorted(scenes, key=lambda scene: (scene.dataset, scene.scene_id))
+    rng = random.Random(seed)
+    rng.shuffle(scenes)
+    if limit_scenes is not None:
+        scenes = scenes[:limit_scenes]
+    return scenes
+
+
+def load_feature_scenes_from_manifest(
+    manifest_path: Path,
+    out_dir: Path,
+    limit_scenes: int | None,
+    seed: int,
+) -> list[FeatureScene]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    scenes = []
+    image_list_root = out_dir / "image_lists"
+    for scene in manifest["scenes"]:
+        scene_id = scene.get("scene_id") or scene["scene_key"].replace("/", "__")
+        image_paths = [resolve(frame["image_path"]) for frame in scene["frames"]]
+        image_list = image_list_root / f"{scene_id}.txt"
+        image_list.parent.mkdir(parents=True, exist_ok=True)
+        image_list.write_text("\n".join(str(path) for path in image_paths) + "\n", encoding="utf-8")
+        scenes.append(
+            FeatureScene(
+                scene_id=scene_id,
+                scene_key=scene["scene_key"],
+                dataset=scene["dataset"],
+                image_list=image_list,
+                output_path=out_dir / f"{scene_id}.pt",
+                image_count=len(image_paths),
             )
         )
 
