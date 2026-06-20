@@ -2,7 +2,7 @@ experiment:
   id: 0008_stage2_pose_angle_keyframing
   title: Stage 2 pose-angle keyframing baseline
   stage: stage2
-  status: planned
+  status: offline_complete
   created: 2026-06-20
 
 question: Can pose-angle threshold keyframing provide a stable non-learned fixed-K baseline that beats uniform20?
